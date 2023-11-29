@@ -1,22 +1,20 @@
 import enum CoreData.NSFetchedResultsChangeType
 import Foundation
-import UIKit
+import os.log
 
 
 
-public enum AggregatedCoreDataChange : Hashable, CustomStringConvertible {
+public enum AggregatedCoreDataChange<Element> : CustomStringConvertible {
 	
-	case update(srcIdx: Int) /* An update *can* have a destination index, but we have deemed it useless for our use case. */
-	case insert(dstIdx: Int)
-	case delete(srcIdx: Int)
-	case move(srcIdx: Int, dstIdx: Int)
+	case sectionInsert(dstIdx: Int, String)
+	case sectionDelete(srcIdx: Int, String)
+	case rowChange(AggregatedSingleSectionCoreDataChange, sectionIdx: Int, Element)
 	
 	public var description: String {
 		switch self {
-			case let .update(srcIdx): return "update(\(srcIdx))"
-			case let .insert(dstIdx): return "insert(\(dstIdx))"
-			case let .delete(srcIdx): return "delete(\(srcIdx))"
-			case let .move(srcIdx, dstIdx): return "move(\(srcIdx), \(dstIdx))"
+			case let .sectionInsert(dstIdx, _): return "section-insert(\(dstIdx))"
+			case let .sectionDelete(srcIdx, _): return "section-delete(\(srcIdx))"
+			case let .rowChange(change, sectionIdx, _): return "row-\(change)-section(\(sectionIdx))"
 		}
 	}
 	
@@ -28,215 +26,170 @@ public final class CoreDataChangesAggregator<Element> {
 	public init() {
 	}
 	
-	public func addChange(_ changeType: NSFetchedResultsChangeType, atIndexPath srcIndexPath: IndexPath?, newIndexPath dstIndexPath: IndexPath?, for object: Element) {
-		assert((srcIndexPath?.section ?? 0) == 0 && (dstIndexPath?.section ?? 0) == 0)
+	public func addSectionChange(_ changeType: NSFetchedResultsChangeType, atSectionIndex sectionIndex: Int, sectionName: String) {
 		switch changeType.rawValue {
-			case NSFetchedResultsChangeType.update.rawValue: currentStaticChanges.append(Change(cdType: changeType, srcIndexPath: srcIndexPath, dstIndexPath: dstIndexPath, object: object))
-			case NSFetchedResultsChangeType.insert.rawValue: currentMovingChanges.append(Change(cdType: changeType, srcIndexPath: srcIndexPath, dstIndexPath: dstIndexPath, object: object))
-			case NSFetchedResultsChangeType.delete.rawValue: currentMovingChanges.append(Change(cdType: changeType, srcIndexPath: srcIndexPath, dstIndexPath: dstIndexPath, object: object))
-			case NSFetchedResultsChangeType.move.rawValue: currentMovingChanges.append(contentsOf: Change.changes(for: changeType, srcIndexPath: srcIndexPath, dstIndexPath: dstIndexPath, object: object))
-			default: ()
-				/* We cannot hard fail here, sadly.
-				 * Apparently, on iOS 8, when the app is compiled with Xcode 7, we receive changes of type 0, which is invalid… */
-//				assertionFailure("Unknown change type \(changeType).")
+			case NSFetchedResultsChangeType.insert.rawValue: 
+				/* Core Data guarantees the section changes are sent _before_ the row changes (says the doc).
+				 * We do not support aggregating multiple “waves” of changes:
+				 *  all and only the changes between the `controllerWillChangeContent` and `controllerDidChangeContent` method calls must be sent.
+				 * We could easily re-order the currentRowAggregators array when starting receiving new section changes,
+				 *  but we’d also have to add the support for multiple waves of changes in CoreDataSingleSectionChangesAggregator.
+				 * Currently (and probably forever) we do not need this capability.
+				 * If you needed later, there is a simpler solution anyway: create an aggregator per wave and iterate on the changes on each aggregator.
+				 * Note: The assert is only for insertion. For deletion, the rows in the sections are reported as deleted first, thus contradicting the doc. */
+				assert(currentRowAggregators.allSatisfy(\.isEmpty), "Adding section changes must not be done after row changes have been added. More info in the code.")
+				currentSectionChanges.append((SectionChange(cdType: changeType, index: sectionIndex), sectionName))
+				
+			case NSFetchedResultsChangeType.delete.rawValue:
+				/* We observed the rows in the deleted sections are reported deleted before the whole section is reported as deleted.
+				 * If we have row changes for the deleted section (we should have all the rows in the section reported deleted), we remove these reports. */
+				if sectionIndex < currentRowAggregators.count {
+					assert(currentRowAggregators[sectionIndex].hasOnlyDeletions)
+					currentRowAggregators[sectionIndex].removeAllChanges()
+				} else {
+					if #available(iOS 14.0, *) {
+						Logger.main.notice("Expected rows to have been reported as deleted before the section was reported deleted, but I do not have a row aggregator for deleted section at index \(sectionIndex) (\(sectionName, privacy: .public)). Was the section emtpy? I might also have misunderstood CoreData; would not be the first time…")
+					}
+				}
+				currentSectionChanges.append((SectionChange(cdType: changeType, index: sectionIndex), sectionName))
+				
+			case NSFetchedResultsChangeType.update.rawValue, NSFetchedResultsChangeType.move.rawValue:
+				/* The update and move change type are invalid for a section change.
+				 * We only do an assertion failure and not a fatal error because CoreData is capricious and I don’t trust it (see next case). */
+				assertionFailure("Invalid change type \(changeType) for a section change.")
+				
+			default:
+				/* We got an unknown section change type.
+				 * We only do an assertion failure and not a fatal error to not crash in prod as an abundance of caution.
+				 * For row changes we _can_ get invalid change type (see the addRowChange function). */
+				assertionFailure("Unknown Core Data change type \(changeType) (section change).")
+		}
+	}
+	
+	public func addRowChange(_ changeType: NSFetchedResultsChangeType, atIndexPath srcIndexPath: IndexPath?, newIndexPath dstIndexPath: IndexPath?, for object: Element) {
+		let srcSection = srcIndexPath?.section, dstSection = dstIndexPath?.section
+		switch (srcSection, dstSection) {
+			case let (section?, nil), let (nil, section?): fallthrough
+			case (let section?, .some) where section == dstSection: fallthrough
+			case (.some, let section?) where section == srcSection:
+				ensureEnoughRowAggregators(for: section)
+				currentRowAggregators[section].addChange(changeType, atIndexPath: srcIndexPath, newIndexPath: dstIndexPath, for: object)
+				
+			case let (section1?, section2?):
+				switch changeType.rawValue {
+					case NSFetchedResultsChangeType.insert.rawValue:
+						ensureEnoughRowAggregators(for: section1)
+						currentRowAggregators[section1].addChange(changeType, atIndexPath: nil, newIndexPath: dstIndexPath, for: object)
+						
+					case NSFetchedResultsChangeType.delete.rawValue, NSFetchedResultsChangeType.update.rawValue:
+						ensureEnoughRowAggregators(for: section2)
+						currentRowAggregators[section2].addChange(changeType, atIndexPath: srcIndexPath, newIndexPath: nil, for: object)
+						
+					case NSFetchedResultsChangeType.move.rawValue:
+						ensureEnoughRowAggregators(for: max(section1, section2))
+						currentRowAggregators[section1].addChange(.insert, atIndexPath: nil, newIndexPath: dstIndexPath, for: object)
+						currentRowAggregators[section2].addChange(.delete, atIndexPath: srcIndexPath, newIndexPath: nil, for: object)
+						
+					default:
+						/* This case should absolutely never happen but we never know with Core Data (see addChange function in CoreDataSingleSectionChangesAggregator). */
+						assertionFailure("Unknown change type \(changeType) (row change).")
+				}
+				
+			case (nil, nil):
+				/* This case should absolutely never happen but we never know with Core Data (see addChange function in CoreDataSingleSectionChangesAggregator). */
+				assertionFailure("Invalid change with both source and destination index paths that are nil.")
 		}
 	}
 	
 	public var isEmpty: Bool {
-		(currentStaticChanges.isEmpty && currentMovingChanges.isEmpty)
+		(currentSectionChanges.isEmpty && currentRowAggregators.allSatisfy(\.isEmpty))
 	}
 	
 	public func removeAllChanges() {
-		currentStaticChanges.removeAll()
-		currentMovingChanges.removeAll()
+		currentSectionChanges.removeAll()
+		currentRowAggregators.removeAll()
 	}
 	
-	/* If you have an NSMutableArray, you can simply update, delete, move and insert the elements directly at the indexes given by the handler and you will be good to go!
-	 * For the moves, delete source, then insert at destination (in this order).
-	 * Do NOT exchanges source and destination! */
-	public func iterateAggregatedChanges(andClearChanges clearChanges: Bool = true, _ handler: (AggregatedCoreDataChange, Element) -> Void) {
-		/* ********* Let’s call the updates. ********* */
-		for change in currentStaticChanges {
-			handler(change.change, change.item)
-		}
-		
-		/* ********* Let’s sort/reindex the inserts, deletes and moves. ********* */
-		currentMovingChanges.sort(by: { change1, change2 in
-			assert(change1.isDelete || change1.isInsert)
-			assert(change2.isDelete || change2.isInsert)
-			
+	public func iterateAggregatedChanges(andClearChanges clearChanges: Bool = true, _ handler: (AggregatedCoreDataChange<Element>) -> Void) {
+		currentSectionChanges.sort(by: { change1, change2 in
+			let (change1, change2) = (change1.0, change2.0)
 			if change1.isDelete && change2.isInsert {return true}
 			if change1.isInsert && change2.isDelete {return false}
 			
-			if change1.isInsert {assert(change1.dstIndex != change2.dstIndex); return (change1.dstIndex! < change2.dstIndex!)}
-			else                {assert(change1.srcIndex != change2.srcIndex); return (change1.srcIndex! > change2.srcIndex!)}
+			if change1.isInsert {assert(change1.index != change2.index); return (change1.index < change2.index)}
+			else                {assert(change1.index != change2.index); return (change1.index > change2.index)}
 		})
-		var i = 0, n = currentMovingChanges.count
-		while i < n {
-			let currentChange = currentMovingChanges[i]
-			assert(currentChange.__idx == nil || currentChange.__idx == i, "INTERNAL ERROR: Invalid __idx.")
-			currentChange.__idx = i
-			
-			if currentChange.isInsert, let linkedChange = currentChange.linkedChangeForMove, linkedChange.__idx != i-1 {
-				assert(i > 0, "INTERNAL LOGIC ERROR")
-				assert(currentChange.__idx == i, "INTERNAL LOGIC ERROR")
-				assert(currentChange.__idx > linkedChange.__idx + 1, "INTERNAL ERROR")
-				for j in stride(from: i, to: linkedChange.__idx + 1, by: -1) {
-					assert(currentMovingChanges[j] === currentChange, "INTERNAL LOGIC ERROR")
-					let swappedChange = currentMovingChanges[j-1]
-					switch (currentChange.change, swappedChange.change) {
-						case let (.insert(curDstIdx), .insert(swpDstIdx)):
-							if curDstIdx <= swpDstIdx {
-								swappedChange.change = .insert(dstIdx: swpDstIdx + 1)
-							} else {
-								assert(curDstIdx > 0, "INTERNAL LOGIC ERROR")
-								currentChange.change = .insert(dstIdx: curDstIdx - 1)
-							}
-							
-						case let (.delete(curSrcIdx), .insert(swpDstIdx)):
-							if curSrcIdx > swpDstIdx {
-								currentChange.change = .delete(srcIdx: curSrcIdx + 1)
-							} else {
-								assert(swpDstIdx > 0, "INTERNAL LOGIC ERROR")
-								assert(curSrcIdx < swpDstIdx, "INTERNAL LOGIC ERROR") /* Equality case is not possible. */
-								swappedChange.change = .insert(dstIdx: swpDstIdx - 1)
-							}
-							
-						case let (.insert(curDstIdx), .delete(swpSrcIdx)):
-							if swpSrcIdx >= curDstIdx {swappedChange.change = .delete(srcIdx: swpSrcIdx + 1)}
-							else                      {currentChange.change = .insert(dstIdx: curDstIdx + 1)}
-							
-						case let (.delete(curSrcIdx), .delete(swpSrcIdx)):
-							if      swpSrcIdx < curSrcIdx {currentChange.change = .delete(srcIdx: curSrcIdx + 1)}
-							else if swpSrcIdx > curSrcIdx {
-								assert(swpSrcIdx > 0, "INTERNAL LOGIC ERROR")
-								swappedChange.change = .delete(srcIdx: swpSrcIdx - 1)
-							}
-							/* In case of equality, there’s nothing to do. */
-							
-						default:
-							assertionFailure("INTERNAL LOGIC ERROR")
-					}
-					currentMovingChanges.swapAt(j, j-1)
-				}
-			}
-			i += 1
-		}
-		i = 0
-		while i < n {
-			let currentChange = currentMovingChanges[i]; i += 1
-			if !currentChange.isNonAtomicMove {handler(currentChange.change, currentChange.item)}
-			else {
-				assert(currentChange.linkedChangeForMove === currentMovingChanges[i], "INTERNAL LOGIC ERROR")
-				let atomicChange = currentChange.atomicMoveUpdate
-				handler(atomicChange.change, atomicChange.item)
-				i += 1
+		for currentSectionChange in currentSectionChanges {
+			switch currentSectionChange.0 {
+				case let .insert(idx): handler(.sectionInsert(dstIdx: idx, currentSectionChange.1))
+				case let .delete(idx): handler(.sectionDelete(srcIdx: idx, currentSectionChange.1))
 			}
 		}
-		
-		/* ********* Finally, let’s remove all the registered changes as they are applied. ********* */
+		for (idx, currentRowAggregator) in currentRowAggregators.enumerated() {
+			currentRowAggregator.iterateAggregatedChanges(andClearChanges: clearChanges, { change, element in
+				handler(.rowChange(change, sectionIdx: idx, element))
+			})
+		}
 		if clearChanges {
 			removeAllChanges()
 		}
 	}
 	
-	private final class Change : CustomStringConvertible {
+	private enum SectionChange : CustomStringConvertible {
 		
-		static func changes(for cdType: NSFetchedResultsChangeType, srcIndexPath: IndexPath?, dstIndexPath: IndexPath?, object: Element) -> [Change] {
+		case insert(Int)
+		case delete(Int)
+		
+		init(cdType: NSFetchedResultsChangeType, index: Int) {
 			switch cdType {
-				case .insert, .delete, .update:
-					return [Self(cdType: cdType, srcIndexPath: srcIndexPath, dstIndexPath: dstIndexPath, object: object)]
+				case .insert: self = .insert(index)
+				case .delete: self = .delete(index)
 					
-				case .move:
-					let update1 = Self(cdType: .delete, srcIndexPath: srcIndexPath, dstIndexPath: nil,          object: object)
-					let update2 = Self(cdType: .insert, srcIndexPath: nil,          dstIndexPath: dstIndexPath, object: object)
-					update1.linkedChangeForMove = update2
-					update2.linkedChangeForMove = update1
-					return [update1, update2]
-					
+				case .move, .update: fallthrough
 				@unknown default:
-					/* We can afford a fatal error as we only init a Change w/ known change types. */
-					fatalError("Unknown change type \(cdType).")
+					/* We never allocated a SectionChange with an invalid type for a section change. */
+					fatalError("Unreachable code reached.")
 			}
 		}
 		
-		convenience init(cdType: NSFetchedResultsChangeType, srcIndexPath: IndexPath?, dstIndexPath: IndexPath?, object: Element) {
-			assert((srcIndexPath?.section ?? 0) == 0 && (dstIndexPath?.section ?? 0) == 0)
-			self.init(cdType: cdType, srcIndex: srcIndexPath?.item, dstIndex: dstIndexPath?.item, object: object)
-		}
-		
-		init(cdType: NSFetchedResultsChangeType, srcIndex: Int?, dstIndex: Int?, object: Element) {
-			/* Note: We do not uncomment the asserts below because NSFetchedResultsController is not safe and sometimes we can get values where none are expected.
-			 * Known case is for the update, where from iOS 7.1 the update gets a destination index.
-			 * See <http://stackoverflow.com/a/32213076>. */
-			switch cdType {
-				case .update: self.change = .update(srcIdx: srcIndex!)//; assert(dstIndex == nil)
-				case .insert: self.change = .insert(dstIdx: dstIndex!)//; assert(srcIndex == nil)
-				case .delete: self.change = .delete(srcIdx: srcIndex!)//; assert(dstIndex == nil)
-				case .move:   self.change = .move(srcIdx: srcIndex!, dstIdx: dstIndex!)
-				@unknown default:
-					/* We can afford a fatal error as we only init a Change w/ known change types. */
-					fatalError("Unknown change type \(cdType).")
+		var index: Int {
+			switch self {
+				case let .insert(idx), let .delete(idx):
+					return idx
 			}
-			self.__idx = nil
-			self.item = object
 		}
-		
-		let item: Element
-		var change: AggregatedCoreDataChange
-		
-		weak var linkedChangeForMove: Change?
-		var isNonAtomicMove: Bool {linkedChangeForMove != nil}
-		
-		/* Only used by the algorithm to aggregate the updates. */
-		var __idx: Int!
 		
 		var isInsert: Bool {
-			switch change {
-				case .insert:                 return true
-				case .update, .delete, .move: return false
+			switch self {
+				case .insert: return true
+				case .delete: return false
 			}
 		}
 		
 		var isDelete: Bool {
-			switch change {
-				case .delete:                 return true
-				case .update, .insert, .move: return false
+			switch self {
+				case .insert: return false
+				case .delete: return true
 			}
-		}
-		
-		var srcIndex: Int? {
-			switch change {
-				case let .delete(srcIdx), let .update(srcIdx), let .move(srcIdx, _): return srcIdx
-				case .insert:                                                        return nil
-			}
-		}
-		
-		var dstIndex: Int? {
-			switch change {
-				case let .insert(dstIdx), let .move(_, dstIdx): return dstIdx
-				case .delete, .update:                          return nil
-			}
-		}
-		
-		var atomicMoveUpdate: Change {
-			let linkedChangeForMove = linkedChangeForMove!
-			assert(linkedChangeForMove.linkedChangeForMove! === self, "I’m invalid (linked update of linked update is not me): \(self)")
-//			assert(item === linkedChangeForMove.item, "I’m invalid (linked object != my object): \(self) - \(linkedChangeForMove)")
-			let delete = (isDelete ? self : linkedChangeForMove)
-			let insert = (isInsert ? self : linkedChangeForMove)
-			assert(delete.isDelete, "I’m invalid (delete is not delete): \(self) - \(delete)")
-			assert(insert.isInsert, "I’m invalid (insert is not insert): \(self) - \(insert)")
-			return Self(cdType: .move, srcIndex: delete.srcIndex, dstIndex: insert.dstIndex, object: insert.item)
 		}
 		
 		var description: String {
-			return "CoreDataChangesAggregator.Change<\(Unmanaged.passUnretained(self).toOpaque())>.\(change) --> \(String(describing: linkedChangeForMove.flatMap{ Unmanaged.passUnretained($0).toOpaque() }))"
+			switch self {
+				case let .insert(idx): return "CoreDataChangesAggregator.SectionChange.insert(\(idx))"
+				case let .delete(idx): return "CoreDataChangesAggregator.SectionChange.delete(\(idx))"
+			}
 		}
 		
 	}
 	
-	private var currentMovingChanges = [Change]()
-	private var currentStaticChanges = [Change]()
+	private var currentSectionChanges = [(SectionChange, String)]()
+	private var currentRowAggregators = [CoreDataSingleSectionChangesAggregator<Element>]()
+	
+	private func ensureEnoughRowAggregators(for sectionIdx: Int) {
+		let toAdd = sectionIdx - currentRowAggregators.count + 1
+		guard toAdd > 0 else {return}
+		
+		currentRowAggregators.append(contentsOf: (0..<toAdd).map{ _ in .init() })
+	}
 	
 }
