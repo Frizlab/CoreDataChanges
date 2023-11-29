@@ -5,7 +5,7 @@ import XCTest
 
 
 
-final class CoreDataChangesAggregatorTests : XCTestCase {
+final class CoreDataChangesAggregatorSingleSectionTests : XCTestCase {
 	
 	func testBasicInsert() {
 		let aggregator = CoreDataChangesAggregator<String>()
