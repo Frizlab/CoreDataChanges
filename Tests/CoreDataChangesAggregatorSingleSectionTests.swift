@@ -177,17 +177,6 @@ private extension CoreDataChangesAggregator where RowItemID == String {
 }
 
 
-private final class Ref<T> {
-	
-	var value: T
-	
-	init(_ v: T) {
-		value = v
-	}
-	
-}
-
-
 private extension String {
 	
 	func toTestInput() -> [String] {
