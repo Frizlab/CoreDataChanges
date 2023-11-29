@@ -5,13 +5,10 @@ import XCTest
 
 
 
-
-
-
-final class CoreDataSingleSectionChangesAggregatorTests : XCTestCase {
+final class CoreDataChangesAggregatorTests : XCTestCase {
 	
 	func testBasicInsert() {
-		let aggregator = CoreDataSingleSectionChangesAggregator<String>()
+		let aggregator = CoreDataChangesAggregator<String>()
 		
 		let tested   = Ref("abc" .toTestInput())
 		let expected =     "a1bc".toTestInput()
@@ -22,7 +19,7 @@ final class CoreDataSingleSectionChangesAggregatorTests : XCTestCase {
 	}
 	
 	func testBasicDelete() {
-		let aggregator = CoreDataSingleSectionChangesAggregator<String>()
+		let aggregator = CoreDataChangesAggregator<String>()
 		
 		let tested   = Ref("abc".toTestInput())
 		let expected =     "ac" .toTestInput()
@@ -33,7 +30,7 @@ final class CoreDataSingleSectionChangesAggregatorTests : XCTestCase {
 	}
 	
 	func testTwoInserts() {
-		let aggregator = CoreDataSingleSectionChangesAggregator<String>()
+		let aggregator = CoreDataChangesAggregator<String>()
 		
 		let tested   = Ref("abc"  .toTestInput())
 		let expected =     "a1b3c".toTestInput()
@@ -45,7 +42,7 @@ final class CoreDataSingleSectionChangesAggregatorTests : XCTestCase {
 	}
 	
 	func testTwoDeletes() {
-		let aggregator = CoreDataSingleSectionChangesAggregator<String>()
+		let aggregator = CoreDataChangesAggregator<String>()
 		
 		let tested   = Ref("abc".toTestInput())
 		let expected =     "a"  .toTestInput()
@@ -57,7 +54,7 @@ final class CoreDataSingleSectionChangesAggregatorTests : XCTestCase {
 	}
 	
 	func testBasicMove() {
-		let aggregator = CoreDataSingleSectionChangesAggregator<String>()
+		let aggregator = CoreDataChangesAggregator<String>()
 		
 		let tested   = Ref("abc".toTestInput())
 		let expected =     "cab".toTestInput()
@@ -68,7 +65,7 @@ final class CoreDataSingleSectionChangesAggregatorTests : XCTestCase {
 	}
 	
 	func testBasicTwoInsertsTwoFalseMoves() {
-		let aggregator = CoreDataSingleSectionChangesAggregator<String>()
+		let aggregator = CoreDataChangesAggregator<String>()
 		
 		let tested   = Ref("ca"  .toTestInput())
 		let expected =     "dcba".toTestInput()
@@ -82,7 +79,7 @@ final class CoreDataSingleSectionChangesAggregatorTests : XCTestCase {
 	}
 	
 	func testBasicTwoDeletesTwoFalseMoves() {
-		let aggregator = CoreDataSingleSectionChangesAggregator<String>()
+		let aggregator = CoreDataChangesAggregator<String>()
 		
 		let tested   = Ref("dcba".toTestInput())
 		let expected =     "ca"  .toTestInput()
@@ -96,7 +93,7 @@ final class CoreDataSingleSectionChangesAggregatorTests : XCTestCase {
 	}
 	
 	func testInsertAndMoveAfterInsert() {
-		let aggregator = CoreDataSingleSectionChangesAggregator<String>()
+		let aggregator = CoreDataChangesAggregator<String>()
 		
 		let tested   = Ref("abc" .toTestInput())
 		let expected =     "a1cb".toTestInput()
@@ -108,7 +105,7 @@ final class CoreDataSingleSectionChangesAggregatorTests : XCTestCase {
 	}
 	
 	func testInsertAndMoveFromBeforeToAfterInsert() {
-		let aggregator = CoreDataSingleSectionChangesAggregator<String>()
+		let aggregator = CoreDataChangesAggregator<String>()
 		
 		let tested   = Ref("abc" .toTestInput())
 		let expected =     "b1ac".toTestInput()
@@ -120,7 +117,7 @@ final class CoreDataSingleSectionChangesAggregatorTests : XCTestCase {
 	}
 	
 	func testInsertAndMoveFromAfterToBeforeInsert() {
-		let aggregator = CoreDataSingleSectionChangesAggregator<String>()
+		let aggregator = CoreDataChangesAggregator<String>()
 		
 		let tested   = Ref("abc" .toTestInput())
 		let expected =     "c1ab".toTestInput()
@@ -132,7 +129,7 @@ final class CoreDataSingleSectionChangesAggregatorTests : XCTestCase {
 	}
 	
 	func testMoveFromSrcToSameDst() {
-		let aggregator = CoreDataSingleSectionChangesAggregator<String>()
+		let aggregator = CoreDataChangesAggregator<String>()
 		
 		let tested   = Ref("abc".toTestInput())
 		let expected =     "abc".toTestInput()
@@ -145,16 +142,16 @@ final class CoreDataSingleSectionChangesAggregatorTests : XCTestCase {
 		XCTAssertEqual(tested.value.joined(), expected.joined())
 	}
 	
-	private func aggregatorHandler(for input: Ref<[String]>) -> (AggregatedSingleSectionCoreDataChange, String) -> Void {
-		return { change, element in
+	private func aggregatorHandler(for input: Ref<[String]>) -> (AggregatedCoreDataChange<String>) -> Void {
+		return { change in
 			switch change {
-				case let .insert(destIdx):   input.value.insert(element, at: destIdx)
-				case let .delete(sourceIdx): input.value.remove(at: sourceIdx)
-				case let .move(sourceIdx, destIdx):
-					let element = input.value[sourceIdx]
-					input.value.remove(at: sourceIdx)
-					input.value.insert(element, at: destIdx)
-				case .update:
+				case let .row(.insert(destPath), element):   input.value.insert(element, at: destPath.rowIdx)
+				case let .row(.delete(sourcePath), _): input.value.remove(at: sourcePath.rowIdx)
+				case let .row(.move(sourcePath, destPath), _):
+					let element = input.value[sourcePath.rowIdx]
+					input.value.remove(at: sourcePath.rowIdx)
+					input.value.insert(element, at: destPath.rowIdx)
+				case .row(.update, _), .section:
 					(/*nop*/)
 			}
 		}
@@ -163,7 +160,7 @@ final class CoreDataSingleSectionChangesAggregatorTests : XCTestCase {
 }
 
 
-private extension CoreDataSingleSectionChangesAggregator where Element == String {
+private extension CoreDataChangesAggregator where RowItemID == String {
 	
 	func addDelete(atIndex idx: Int) {
 		addChange(.delete, atIndexPath: [0, idx], newIndexPath: nil, for: "invalid deleted object (object is unneeded and getting the actual value is not trivial so we put an obviously invalid value)")

@@ -3,7 +3,7 @@ import os.log
 
 
 
-@available(iOS 14.0, *)
+@available(macOS 11.0, iOS 14.0, *)
 extension Logger {
 	
 	static let main = {
