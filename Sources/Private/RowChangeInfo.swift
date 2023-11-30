@@ -19,22 +19,6 @@ internal final class RowChangeInfo<RowItemID> : CustomStringConvertible {
 		self.itemID = itemID
 		self.__idx = nil
 	}
-//	init(cdType: NSFetchedResultsChangeType, srcPath: RowPath?, dstPath: RowPath?, itemID: RowItemID) {
-		/* Note: We do not uncomment the asserts below because NSFetchedResultsController is not safe and sometimes we can get values where none are expected.
-		 * Known case is for the update, where from iOS 7.1 the update gets a destination index.
-		 * See <http://stackoverflow.com/a/32213076>. */
-//		switch cdType {
-//			case .update: self.change = .update(srcPath: srcPath!)//; assert(dstPath == nil)
-//			case .insert: self.change = .insert(dstPath: dstPath!)//; assert(srcPath == nil)
-//			case .delete: self.change = .delete(srcPath: srcPath!)//; assert(dstPath == nil)
-//			case .move:   self.change = .move(srcPath: srcPath!, dstPath: dstPath!)
-//			@unknown default:
-//				/* We can afford a fatal error as we only init a Change w/ known change types. */
-//				fatalError("Unknown change type \(cdType).")
-//		}
-//		self.__idx = nil
-//		self.itemID = itemID
-//	}
 	
 	var isInsert: Bool {
 		switch change {
