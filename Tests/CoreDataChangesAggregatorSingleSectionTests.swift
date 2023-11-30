@@ -163,15 +163,15 @@ final class CoreDataChangesAggregatorSingleSectionTests : XCTestCase {
 private extension CoreDataChangesAggregator where RowItemID == String {
 	
 	func addDelete(atIndex idx: Int) {
-		addChange(.delete, atIndexPath: [0, idx], newIndexPath: nil, for: "invalid deleted object (object is unneeded and getting the actual value is not trivial so we put an obviously invalid value)")
+		addRowChange(.delete, atIndexPath: [0, idx], newIndexPath: nil, for: "invalid deleted object (object is unneeded and getting the actual value is not trivial so we put an obviously invalid value)")
 	}
 	
 	func addInsert(atIndex idx: Int, object: String) {
-		addChange(.insert, atIndexPath: nil, newIndexPath: [0, idx], for: object)
+		addRowChange(.insert, atIndexPath: nil, newIndexPath: [0, idx], for: object)
 	}
 	
 	func addMove(from sourceIdx: Int, to destIdx: Int) {
-		addChange(.move, atIndexPath: [0, sourceIdx], newIndexPath: [0, destIdx], for: "invalid moved object (object is unneeded and getting the actual value is not trivial so we put an obviously invalid value)")
+		addRowChange(.move, atIndexPath: [0, sourceIdx], newIndexPath: [0, destIdx], for: "invalid moved object (object is unneeded and getting the actual value is not trivial so we put an obviously invalid value)")
 	}
 	
 }

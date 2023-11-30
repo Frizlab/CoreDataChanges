@@ -9,7 +9,7 @@ public final class CoreDataChangesAggregator<RowItemID> {
 	public init() {
 	}
 	
-//	public func addSectionChange(_ changeType: NSFetchedResultsChangeType, atSectionIndex sectionIndex: Int, sectionName: String) {
+	public func addSectionChange(_ changeType: NSFetchedResultsChangeType, atSectionIndex sectionIndex: Int, sectionName: String) {
 //		switch changeType.rawValue {
 //			case NSFetchedResultsChangeType.insert.rawValue:
 //				/* Core Data guarantees the section changes are sent _before_ the row changes (says the doc).
@@ -45,9 +45,9 @@ public final class CoreDataChangesAggregator<RowItemID> {
 //				 * For row changes we _can_ get invalid change type (see the addRowChange function). */
 //				assertionFailure("Unknown Core Data change type \(changeType) (section change).")
 //		}
-//	}
+	}
 	
-	public func addChange(_ changeType: NSFetchedResultsChangeType, atIndexPath srcIndexPath: IndexPath?, newIndexPath dstIndexPath: IndexPath?, for object: RowItemID) {
+	public func addRowChange(_ changeType: NSFetchedResultsChangeType, atIndexPath srcIndexPath: IndexPath?, newIndexPath dstIndexPath: IndexPath?, for object: RowItemID) {
 		/* Note: We do not uncomment the asserts below because NSFetchedResultsController is not safe and sometimes we can get values where none are expected.
 		 * Known case is for the update, where from iOS 7.1 the update gets a destination index.
 		 * See <http://stackoverflow.com/a/32213076>. */
