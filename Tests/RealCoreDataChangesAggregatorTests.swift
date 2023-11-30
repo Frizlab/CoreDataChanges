@@ -46,9 +46,7 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 	
 	func testSetup() throws {
 		/* A dummy test that prints when going in the NSFetchedResultsControllerDelegate methods; just to verify our setup is correct. */
-		let fRequest = Entity.fetchRequest()
-		fRequest.sortDescriptors = [NSSortDescriptor(keyPath: \Entity.title, ascending: true)]
-		let frc = NSFetchedResultsController(fetchRequest: fRequest, managedObjectContext: context, sectionNameKeyPath: "section", cacheName: nil)
+		let frc = createFRC()
 		try printMonitor.startMonitor(controller: frc, context: context)
 		
 		wentInDidChangeOfPrintMonitor = false
@@ -72,10 +70,8 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 			Section(name: "none", contents: [entity1.objectID, entity2.objectID, entity3.objectID, entity4.objectID, entity5.objectID])
 		])
 		let monitor = aggregatorMonitor(for: .init(), output: output)
-		
-		let fRequest = Entity.fetchRequest()
-		fRequest.sortDescriptors = [NSSortDescriptor(keyPath: \Entity.title, ascending: true)]
-		let frc = NSFetchedResultsController(fetchRequest: fRequest, managedObjectContext: context, sectionNameKeyPath: "section", cacheName: nil)
+
+		let frc = createFRC()
 		try monitor.startMonitor(controller: frc, context: context)
 		
 		_ = Entity(context: context, title: "6", section: section)
@@ -88,8 +84,28 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 		XCTAssertEqual(output.value, sections(from: frc))
 	}
 	
-	private func sections(from frc: NSFetchedResultsController<NSFetchRequestResult>) -> [Section] {
+	func testFirstSectionCreation() throws {
+		let section = "none"
+		let output: Ref<[Section]> = .init([])
+		let monitor = aggregatorMonitor(for: .init(), output: output)
+		
+		let frc = createFRC()
+		try monitor.startMonitor(controller: frc, context: context)
+		
+		_ = Entity(context: context, title: "1", section: section)
+		context.processPendingChanges()
+		
+		XCTAssertEqual(output.value, sections(from: frc))
+	}
+	
+	private func sections(from frc: NSFetchedResultsController<Entity>) -> [Section] {
 		return frc.sections!.map{ section in Section(name: section.name, contents: (section.objects as! [Entity]).map(\.objectID)) }
+	}
+	
+	private func createFRC() -> NSFetchedResultsController<Entity> {
+		let fRequest = Entity.fetchRequest() as! NSFetchRequest<Entity>
+		fRequest.sortDescriptors = [NSSortDescriptor(keyPath: \Entity.title, ascending: true)]
+		return NSFetchedResultsController(fetchRequest: fRequest, managedObjectContext: context, sectionNameKeyPath: "section", cacheName: nil)
 	}
 	
 	private var wentInDidChangeOfPrintMonitor: Bool = false
