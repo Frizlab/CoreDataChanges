@@ -11,13 +11,32 @@ internal final class RowChangeInfo<RowItemID> : CustomStringConvertible {
 	weak var linkedChangeForMove: RowChangeInfo?
 	var isNonAtomicMove: Bool {linkedChangeForMove != nil}
 	
-	/* Only used by the algorithm to aggregate the updates. */
+	/* Both are only used by the algorithm to aggregate the updates. */
 	var __idx: Int!
+	var __sectionAdjusted: Bool = false
 	
 	init(change: RowChange, itemID: RowItemID) {
 		self.change = change
 		self.itemID = itemID
 		self.__idx = nil
+	}
+	
+	func adjustSectionIfNeeded(sectionInsertDeltas: [Int], sectionDeleteDeltas: [Int]) {
+		guard !__sectionAdjusted else {
+			return
+		}
+		
+		switch change {
+			case let .update(srcPath): change = .update(srcPath: Self.adjustSrcPath(srcPath, withInsertDeltas: sectionInsertDeltas))
+			case let .insert(dstPath): change = .insert(dstPath: Self.adjustDstPath(dstPath, withDeleteDeltas: sectionDeleteDeltas))
+			case let .delete(srcPath): change = .delete(srcPath: Self.adjustSrcPath(srcPath, withInsertDeltas: sectionInsertDeltas))
+			case let .move(srcPath, dstPath):
+				change = .move(
+					srcPath: Self.adjustSrcPath(srcPath, withInsertDeltas: sectionInsertDeltas),
+					dstPath: Self.adjustDstPath(dstPath, withDeleteDeltas: sectionDeleteDeltas)
+				)
+		}
+		__sectionAdjusted = true
 	}
 	
 	var isInsert: Bool {
@@ -61,6 +80,14 @@ internal final class RowChangeInfo<RowItemID> : CustomStringConvertible {
 	
 	var description: String {
 		return "RowChangeInfo<\(Unmanaged.passUnretained(self).toOpaque())>.\(change) --> \(String(describing: linkedChangeForMove.flatMap{ Unmanaged.passUnretained($0).toOpaque() }))"
+	}
+	
+	static func adjustSrcPath(_ srcPath: RowPath, withInsertDeltas insertDeltas: [Int]) -> RowPath {
+		return .init(secIdx: SectionInfo.adjustSrcIdx(srcPath.secIdx, withInsertDeltas: insertDeltas), rowIdx: srcPath.rowIdx)
+	}
+	
+	static func adjustDstPath(_ dstPath: RowPath, withDeleteDeltas deleteDeltas: [Int]) -> RowPath {
+		return .init(secIdx: SectionInfo.adjustDstIdx(dstPath.secIdx, withDeleteDeltas: deleteDeltas), rowIdx: dstPath.rowIdx)
 	}
 	
 }
