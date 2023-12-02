@@ -142,6 +142,21 @@ final class CoreDataChangesAggregatorSingleSectionTests : XCTestCase {
 		XCTAssertEqual(tested.value.joined(), expected.joined())
 	}
 	
+	func testExtractedFromRealCoreDataTestCrash() {
+		let aggregator = CoreDataChangesAggregator<String>()
+		
+		let tested   = Ref("abcdefghi".toTestInput())
+		let expected =     "cbedfaghi".toTestInput()
+		aggregator.addMove(from: 0, to: 5)
+		aggregator.addUpdate(at: 6, withDestination: 6)
+		aggregator.addUpdate(at: 3, withDestination: 3)
+		aggregator.addMove(from: 4, to: 2)
+		aggregator.addMove(from: 2, to: 0)
+		
+		aggregator.iterateAggregatedChanges(aggregatorHandler(for: tested))
+		XCTAssertEqual(tested.value.joined(), expected.joined())
+	}
+	
 	private func aggregatorHandler(for input: Ref<[String]>) -> (AggregatedCoreDataChange<String>) -> Void {
 		return { change in
 			switch change {
@@ -172,6 +187,10 @@ private extension CoreDataChangesAggregator where RowItemID == String {
 	
 	func addMove(from sourceIdx: Int, to destIdx: Int) {
 		addRowChange(.move, atIndexPath: [0, sourceIdx], newIndexPath: [0, destIdx], for: "invalid moved object (object is unneeded and getting the actual value is not trivial so we put an obviously invalid value)")
+	}
+	
+	func addUpdate(at sourceIdx: Int, withDestination destIdx: Int) {
+		addRowChange(.update, atIndexPath: [0, sourceIdx], newIndexPath: [0, destIdx], for: "invalid updated object (object is unneeded and getting the actual value is not trivial so we put an obviously invalid value)")
 	}
 	
 }
