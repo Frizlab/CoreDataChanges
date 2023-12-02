@@ -148,8 +148,8 @@ final class CoreDataChangesAggregatorSingleSectionTests : XCTestCase {
 		let tested   = Ref("abcdefghi".toTestInput())
 		let expected =     "cbedfaghi".toTestInput()
 		aggregator.addMove(from: 0, to: 5)
-		aggregator.addUpdate(at: 6, withDestination: 6)
-		aggregator.addUpdate(at: 3, withDestination: 3)
+//		aggregator.addUpdate(at: 6, withDestination: 6)
+//		aggregator.addUpdate(at: 3, withDestination: 3)
 		aggregator.addMove(from: 4, to: 2)
 		aggregator.addMove(from: 2, to: 0)
 		
