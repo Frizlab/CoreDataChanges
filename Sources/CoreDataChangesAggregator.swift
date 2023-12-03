@@ -71,29 +71,28 @@ public final class CoreDataChangesAggregator<RowItemID> {
 		}
 		
 		/* ********* Compute the inserts/deletes deltas. ********* */
-		var sectionDeleteDeltas = [Int]()
-		var sectionInsertDeltas = [Int]()
-		/* Make sure we have the same number of elements in the section inserts and deletes arrays. */
-		let expectedCount = max(currentSectionInserts.count,
-										currentSectionDeletes.count)
-		currentSectionInserts.ensureCount(expectedCount)
-		currentSectionDeletes.ensureCount(expectedCount)
-		/* Let’s do the maths. */
 		var currentInsertDelta = 0
-		var currentDeleteDelta = 0
-		for (idx, (insert, delete)) in zip(currentSectionInserts, currentSectionDeletes).enumerated() {
+		var sectionInsertDeltas = [Int]()
+		for (idx, insert) in currentSectionInserts.enumerated() {
 			if let insert {
-				handler(.section(.insert(dstIdx: idx + currentDeleteDelta), insert))
+				handler(.section(.insert(dstIdx: idx), insert))
 				let deltaIdx = idx - currentInsertDelta
 				assert(deltaIdx >= 0)
 				sectionInsertDeltas.extendForDeltas(minCount: deltaIdx + 1)
 				currentInsertDelta += 1
 				sectionInsertDeltas[deltaIdx] = currentInsertDelta
 			}
+		}
+		var currentDeleteDelta = 0
+		var sectionDeleteDeltas = [Int]()
+		for (idx, delete) in currentSectionDeletes.enumerated() {
+			let idx = adjustSrcIdx(idx, withInsertDeltas: sectionInsertDeltas)
 			if delete != nil {
-				sectionDeleteDeltas.append(contentsOf: [Int](repeating: currentDeleteDelta, count: idx + currentInsertDelta - sectionDeleteDeltas.count))
+				let deltaIdx = idx - currentDeleteDelta
+				assert(deltaIdx >= 0)
+				sectionDeleteDeltas.extendForDeltas(minCount: deltaIdx + 1)
 				currentDeleteDelta += 1
-				sectionDeleteDeltas.append(currentDeleteDelta)
+				sectionDeleteDeltas[deltaIdx] = currentDeleteDelta
 			}
 		}
 		
@@ -183,7 +182,7 @@ public final class CoreDataChangesAggregator<RowItemID> {
 		}
 		
 		/* ********* Call the section deletes. ********* */
-		for (idx, delete) in currentSectionDeletes.enumerated() {
+		for (idx, delete) in currentSectionDeletes.enumerated().reversed() {
 			guard let delete else {continue}
 			handler(.section(.delete(srcIdx: adjustSrcIdx(idx, withInsertDeltas: sectionInsertDeltas)), delete))
 		}
