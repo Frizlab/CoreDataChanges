@@ -22,13 +22,13 @@ internal final class RowChangeInfo<RowItemID> : CustomStringConvertible {
 	
 	func adjustSection(sectionInsertDeltas: [Int], sectionDeleteDeltas: [Int]) {
 		switch change {
-			case let .update(srcPath): change = .update(srcPath: Self.adjustSrcPath(srcPath, withInsertDeltas: sectionInsertDeltas))
-			case let .insert(dstPath): change = .insert(dstPath: Self.adjustDstPath(dstPath, withDeleteDeltas: sectionDeleteDeltas))
-			case let .delete(srcPath): change = .delete(srcPath: Self.adjustSrcPath(srcPath, withInsertDeltas: sectionInsertDeltas))
+			case let .update(srcPath): change = .update(srcPath: adjustSrcPath(srcPath, withInsertDeltas: sectionInsertDeltas))
+			case let .insert(dstPath): change = .insert(dstPath: adjustDstPath(dstPath, withDeleteDeltas: sectionDeleteDeltas))
+			case let .delete(srcPath): change = .delete(srcPath: adjustSrcPath(srcPath, withInsertDeltas: sectionInsertDeltas))
 			case let .move(srcPath, dstPath):
 				change = .move(
-					srcPath: Self.adjustSrcPath(srcPath, withInsertDeltas: sectionInsertDeltas),
-					dstPath: Self.adjustDstPath(dstPath, withDeleteDeltas: sectionDeleteDeltas)
+					srcPath: adjustSrcPath(srcPath, withInsertDeltas: sectionInsertDeltas),
+					dstPath: adjustDstPath(dstPath, withDeleteDeltas: sectionDeleteDeltas)
 				)
 		}
 	}
@@ -74,14 +74,6 @@ internal final class RowChangeInfo<RowItemID> : CustomStringConvertible {
 	
 	var description: String {
 		return "RowChangeInfo<\(Unmanaged.passUnretained(self).toOpaque())>.\(change) --> \(String(describing: linkedChangeForMove.flatMap{ Unmanaged.passUnretained($0).toOpaque() }))"
-	}
-	
-	static func adjustSrcPath(_ srcPath: RowPath, withInsertDeltas insertDeltas: [Int]) -> RowPath {
-		return .init(secIdx: SectionInfo.adjustSrcIdx(srcPath.secIdx, withInsertDeltas: insertDeltas), rowIdx: srcPath.rowIdx)
-	}
-	
-	static func adjustDstPath(_ dstPath: RowPath, withDeleteDeltas deleteDeltas: [Int]) -> RowPath {
-		return .init(secIdx: SectionInfo.adjustDstIdx(dstPath.secIdx, withDeleteDeltas: deleteDeltas), rowIdx: dstPath.rowIdx)
 	}
 	
 }

@@ -185,7 +185,7 @@ public final class CoreDataChangesAggregator<RowItemID> {
 		/* ********* Call the section deletes. ********* */
 		for (idx, delete) in currentSectionDeletes.enumerated() {
 			guard let delete else {continue}
-			handler(.section(.delete(srcIdx: SectionInfo.adjustSrcIdx(idx, withInsertDeltas: sectionInsertDeltas)), delete))
+			handler(.section(.delete(srcIdx: adjustSrcIdx(idx, withInsertDeltas: sectionInsertDeltas)), delete))
 		}
 		
 		/* ********* Finally, let’s remove all the registered changes as they are applied. ********* */
