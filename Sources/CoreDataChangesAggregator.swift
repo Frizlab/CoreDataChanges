@@ -11,8 +11,8 @@ public final class CoreDataChangesAggregator<RowItemID> {
 	
 	public func addSectionChange(_ changeType: NSFetchedResultsChangeType, atSectionIndex sectionIndex: Int, sectionName: String) {
 		switch changeType.rawValue {
-			case NSFetchedResultsChangeType.insert.rawValue: currentSectionInserts.append(SectionInfo(idx: sectionIndex, name: sectionName))
-			case NSFetchedResultsChangeType.delete.rawValue: currentSectionDeletes.append(SectionInfo(idx: sectionIndex, name: sectionName))
+			case NSFetchedResultsChangeType.insert.rawValue: currentSectionInserts.addSectionChange(name: sectionName, at: sectionIndex)
+			case NSFetchedResultsChangeType.delete.rawValue: currentSectionDeletes.addSectionChange(name: sectionName, at: sectionIndex)
 			case NSFetchedResultsChangeType.update.rawValue, NSFetchedResultsChangeType.move.rawValue:
 				/* The update and move change type are invalid for a section change.
 				 * We only do an assertion failure and not a fatal error because CoreData is capricious and I don’t trust it (see next case). */
@@ -70,31 +70,35 @@ public final class CoreDataChangesAggregator<RowItemID> {
 			handler(.row(change.change, change.itemID))
 		}
 		
-		/* ********* Sort the deletes and compute the deltas. ********* */
+		/* ********* Compute the inserts/deletes deltas. ********* */
 		var sectionDeleteDeltas = [Int]()
-		currentSectionDeletes.sort{ $0.idx > $1.idx }
-		if let maxIdx = currentSectionDeletes.first?.idx {
-			for delete in currentSectionDeletes {
-				assert(maxIdx >= delete.idx)
-				let invertedIdx = maxIdx - delete.idx
-				let latestDelta = sectionDeleteDeltas.last ?? 0
-				sectionDeleteDeltas.insert(contentsOf: [Int](repeating: latestDelta, count: invertedIdx - sectionDeleteDeltas.count), at: 0)
-				sectionDeleteDeltas.insert(latestDelta + 1, at: 0)
+		var sectionInsertDeltas = [Int]()
+		/* Make sure we have the same number of elements in the section inserts and deletes arrays. */
+		let expectedCount = max(currentSectionInserts.count,
+										currentSectionDeletes.count)
+		currentSectionInserts.ensureCount(expectedCount)
+		currentSectionDeletes.ensureCount(expectedCount)
+		/* Let’s do the maths. */
+		var currentInsertDelta = 0
+		var currentDeleteDelta = 0
+		for (idx, (insert, delete)) in zip(currentSectionInserts, currentSectionDeletes).enumerated() {
+			if let insert {
+				handler(.section(.insert(dstIdx: idx + currentDeleteDelta), insert))
+				let deltaIdx = idx - currentInsertDelta
+				assert(deltaIdx >= 0)
+				sectionInsertDeltas.extendForDeltas(minCount: deltaIdx + 1)
+				currentInsertDelta += 1
+				sectionInsertDeltas[deltaIdx] = currentInsertDelta
+			}
+			if delete != nil {
+				sectionDeleteDeltas.append(contentsOf: [Int](repeating: currentDeleteDelta, count: idx + currentInsertDelta - sectionDeleteDeltas.count))
+				currentDeleteDelta += 1
+				sectionDeleteDeltas.append(currentDeleteDelta)
 			}
 		}
 		
-		/* ********* Call the sorted inserts (we do not keep the sorted array as we do not need it later). ********* */
-		var sectionInsertDeltas = [Int]()
-		for insert in (currentSectionInserts.sorted{ $0.idx < $1.idx }) {
-			let adjustedIndex = SectionInfo.adjustDstIdx(insert.idx, withDeleteDeltas: sectionDeleteDeltas)
-			let latestDelta = sectionInsertDeltas.last ?? 0
-			sectionInsertDeltas.append(contentsOf: [Int](repeating: latestDelta, count: adjustedIndex - sectionInsertDeltas.count))
-			sectionInsertDeltas.append(latestDelta + 1)
-			handler(.section(.insert(dstIdx: adjustedIndex), insert.name))
-		}
-		
 		/* ********* Sort/reindex the row inserts, deletes and moves, and call them. ********* */
-		currentMovingRowChanges.forEach{ $0.adjustSectionIfNeeded(sectionInsertDeltas: sectionInsertDeltas, sectionDeleteDeltas: sectionDeleteDeltas) }
+		currentMovingRowChanges.forEach{ $0.adjustSection(sectionInsertDeltas: sectionInsertDeltas, sectionDeleteDeltas: sectionDeleteDeltas) }
 		currentMovingRowChanges.sort(by: { change1, change2 in
 			assert(change1.isDelete || change1.isInsert)
 			assert(change2.isDelete || change2.isInsert)
@@ -109,7 +113,6 @@ public final class CoreDataChangesAggregator<RowItemID> {
 		while i < n {
 			let currentChange = currentMovingRowChanges[i]
 			assert(currentChange.__idx == nil || currentChange.__idx == i, "INTERNAL ERROR: Invalid __idx.")
-			assert(currentChange.__sectionAdjusted)
 			currentChange.__idx = i
 			
 //			if #available(macOS 11.0, tvOS 14.0, iOS 14.0, watchOS 7.0, *) {
@@ -180,8 +183,9 @@ public final class CoreDataChangesAggregator<RowItemID> {
 		}
 		
 		/* ********* Call the section deletes. ********* */
-		for delete in currentSectionDeletes {
-			handler(.section(.delete(srcIdx: SectionInfo.adjustSrcIdx(delete.idx, withInsertDeltas: sectionInsertDeltas)), delete.name))
+		for (idx, delete) in currentSectionDeletes.enumerated() {
+			guard let delete else {continue}
+			handler(.section(.delete(srcIdx: SectionInfo.adjustSrcIdx(idx, withInsertDeltas: sectionInsertDeltas)), delete))
 		}
 		
 		/* ********* Finally, let’s remove all the registered changes as they are applied. ********* */
@@ -190,8 +194,10 @@ public final class CoreDataChangesAggregator<RowItemID> {
 		}
 	}
 	
-	private var currentSectionInserts = [SectionInfo]()
-	private var currentSectionDeletes = [SectionInfo]()
+	/* For both arrays, the value is the name of the section being inserted/deleted.
+	 * If nil, there’s no change at this index. */
+	private var currentSectionInserts = [String?]()
+	private var currentSectionDeletes = [String?]()
 	
 	private var currentMovingRowChanges = [RowChangeInfo<RowItemID>]()
 	private var currentStaticRowChanges = [RowChangeInfo<RowItemID>]()
@@ -200,6 +206,51 @@ public final class CoreDataChangesAggregator<RowItemID> {
 		if #available(macOS 11.0, tvOS 14.0, iOS 14.0, watchOS 7.0, *) {
 			Logger.main.trace("[\n\(changes.map{ "  \($0)" }.joined(separator: "\n"), privacy: .public)\n]")
 		}
+	}
+	
+}
+
+
+private extension Array {
+	
+	subscript<T>(safe idx: Int) -> T? where Element == Optional<T> {
+		get {
+			assert(idx >= 0) /* Yes, the function is “safe,” but calling with an index lower than 0 is still illegal. */
+			guard idx < endIndex else {return nil}
+			return self[idx]
+		}
+		set {
+			assert(idx >= 0) /* Yes, the function is “safe,” but calling with an index lower than 0 is still illegal. */
+			ensureCount(idx + 1)
+			self[idx] = newValue
+		}
+	}
+	
+	mutating func ensureCount<T>(_ minCount: Int) where Element == Optional<T> {
+		assert(minCount >= 0)
+		guard minCount > count else {return}
+		append(contentsOf: [T?](repeating: nil, count: minCount - count))
+	}
+	
+}
+
+
+private extension Array where Element == Int {
+	
+	mutating func extendForDeltas(minCount: Int) {
+		assert(minCount >= 0)
+		guard minCount > count else {return}
+		append(contentsOf: [Int](repeating: last ?? 0, count: minCount - count))
+	}
+	
+}
+
+
+private extension Array where Element == String? {
+	
+	mutating func addSectionChange(name: String, at idx: Int) {
+		assert(self[safe: idx] == nil)
+		self[safe: idx] = name
 	}
 	
 }

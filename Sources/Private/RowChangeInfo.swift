@@ -13,7 +13,6 @@ internal final class RowChangeInfo<RowItemID> : CustomStringConvertible {
 	
 	/* Both are only used by the algorithm to aggregate the updates. */
 	var __idx: Int!
-	var __sectionAdjusted: Bool = false
 	
 	init(change: RowChange, itemID: RowItemID) {
 		self.change = change
@@ -21,11 +20,7 @@ internal final class RowChangeInfo<RowItemID> : CustomStringConvertible {
 		self.__idx = nil
 	}
 	
-	func adjustSectionIfNeeded(sectionInsertDeltas: [Int], sectionDeleteDeltas: [Int]) {
-		guard !__sectionAdjusted else {
-			return
-		}
-		
+	func adjustSection(sectionInsertDeltas: [Int], sectionDeleteDeltas: [Int]) {
 		switch change {
 			case let .update(srcPath): change = .update(srcPath: Self.adjustSrcPath(srcPath, withInsertDeltas: sectionInsertDeltas))
 			case let .insert(dstPath): change = .insert(dstPath: Self.adjustDstPath(dstPath, withDeleteDeltas: sectionDeleteDeltas))
@@ -36,7 +31,6 @@ internal final class RowChangeInfo<RowItemID> : CustomStringConvertible {
 					dstPath: Self.adjustDstPath(dstPath, withDeleteDeltas: sectionDeleteDeltas)
 				)
 		}
-		__sectionAdjusted = true
 	}
 	
 	var isInsert: Bool {

@@ -37,14 +37,14 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 		return model
 	}()
 	
-	override func setUp() async throws {
+	override func setUpWithError() throws {
 		let persistentCoordinator = NSPersistentStoreCoordinator(managedObjectModel: Self.model)
 		_ = try persistentCoordinator.addPersistentStore(type: .inMemory, at: URL(fileURLWithPath: "/dev/null"))
 		context = NSManagedObjectContext(concurrencyType: .mainQueueConcurrencyType)
 		context.persistentStoreCoordinator = persistentCoordinator
 	}
 	
-	override func tearDown() async throws {
+	override func tearDown() {
 		context = nil
 	}
 	
@@ -248,6 +248,7 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 			Section(name: section2, contents: [e1s2.objectID, e2s2.objectID]),
 		])
 		let monitor = aggregatorMonitor(for: .init(), output: output)
+//		let monitor = printMonitor
 		
 		let frc = createFRC()
 		try monitor.startMonitor(controller: frc, context: context)
@@ -256,6 +257,73 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 		_ = Entity(context: context, title: "2-3", section: section2)
 		context.processPendingChanges()
 		
+		XCTAssertEqual(output.value, sections(from: frc))
+	}
+	
+	func testTwoConsecutiveSectionInsertsFromMoves() throws {
+		let s2e1 = Entity(context: context, title: "2-1", section: "2")
+		let s2e2 = Entity(context: context, title: "2-2", section: "2")
+		let s4e1 = Entity(context: context, title: "4-1", section: "4")
+		let s4e2 = Entity(context: context, title: "4-2", section: "4")
+		context.processPendingChanges()
+		
+		let output = Ref([
+			Section(name: "2", contents: [s2e1.objectID, s2e2.objectID]),
+			Section(name: "4", contents: [s4e1.objectID, s4e2.objectID]),
+		])
+		let monitor = aggregatorMonitor(for: .init(), output: output)
+//		let monitor = printMonitor
+		
+		let frc = createFRC()
+		try monitor.startMonitor(controller: frc, context: context)
+		
+		assert(output.value == sections(from: frc))
+		prettyPrintSections("ori: ", output.value)
+		
+		(s4e1.title, s4e1.section) = ("0-2", "0")
+		(s2e2.title, s2e2.section) = ("1-2", "1")
+		context.processPendingChanges()
+		
+		prettyPrintSections("ref: ", sections(from: frc))
+		prettyPrintSections("cmp: ", output.value)
+		XCTAssertEqual(output.value, sections(from: frc))
+	}
+	
+	func testFailureFoundFromRandomTest() throws {
+		let s1e0 = Entity(context: context, title: "1-0", section: "1")
+		let s1e1 = Entity(context: context, title: "1-1", section: "1")
+		let s2e0 = Entity(context: context, title: "2-1", section: "2")
+		let s2e1 = Entity(context: context, title: "2-2", section: "2")
+		let s3e0 = Entity(context: context, title: "3-0", section: "3")
+		let s3e1 = Entity(context: context, title: "3-1", section: "3")
+		let s4e0 = Entity(context: context, title: "4-0", section: "4")
+		context.processPendingChanges()
+		
+		let output = Ref([
+			Section(name: "1", contents: [s1e0.objectID, s1e1.objectID]),
+			Section(name: "2", contents: [s2e0.objectID, s2e1.objectID]),
+			Section(name: "3", contents: [s3e0.objectID, s3e1.objectID]),
+			Section(name: "4", contents: [s4e0.objectID]),
+		])
+		let monitor = aggregatorMonitor(for: .init(), output: output)
+//		let monitor = printMonitor
+		
+		let frc = createFRC()
+		try monitor.startMonitor(controller: frc, context: context)
+		
+		XCTAssertEqual(output.value, sections(from: frc))
+		prettyPrintSections("ori: ", output.value)
+		
+		(s3e1.section, s3e1.title) = ("0", "0-1")
+		(s3e0.section, s3e0.title) = ("2", "2-0")
+		/* Originally in the extracted failure, but useless for our test. */
+//		(s2e0.section, s2e0.title) = ("4", "4-0")
+//		(s1e0.section, s1e0.title) = ("4", "4-1")
+//		(s4e0.section, s4e0.title) = ("0", "0-0")
+		context.processPendingChanges()
+		
+		prettyPrintSections("ref: ", sections(from: frc))
+		prettyPrintSections("cmp: ", output.value)
 		XCTAssertEqual(output.value, sections(from: frc))
 	}
 	
@@ -309,53 +377,93 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 	}
 	
 	func testLotsOfSeededRandomOperations() throws {
-		var randomGenerator = SeededGenerator(seed: 6333307901044014058)
-		
-		let output: Ref<[Section]> = Ref([])
-		let monitor = aggregatorMonitor(for: .init(), output: output)
-//		let monitor = printMonitor
-		
-		let frc = createFRC()
-		try monitor.startMonitor(controller: frc, context: context)
-		
-		let possibleSections1 = (1...5).map(String.init)
-		let possibleSectionlessTitles1 = (1...7).map(String.init)
-		let possibleSections2 = (1...7).map(String.init)
-		let possibleSectionlessTitles2 = (1...142).map(String.init)
-		
-		var allEntities = [Entity]()
-		
-		/* First let’s insert a bit of data. */
-		let insertedEntities1 = try (0..<7).map{ _ in
-			try insertUniqueEntity(sections: possibleSections1, sectionlessTitles: possibleSectionlessTitles1, using: &randomGenerator)
+		for seed in [6333307901044014058, 9028641369122766215, 12233175915943776524, 6518433589830160860, 14980529582378505534] as [UInt64] {
+			print("seed: \(seed)")
+			var randomGenerator = SeededGenerator(seed: seed)
+			
+			let output: Ref<[Section]> = Ref([])
+			let monitor = aggregatorMonitor(for: .init(), output: output)
+//			let monitor = printMonitor
+			defer {monitor.stopMonitor()}
+			
+			let frc = createFRC()
+			try monitor.startMonitor(controller: frc, context: context)
+			
+			let possibleSections1 = (1...5).map(String.init)
+			let possibleSectionlessTitles1 = (1...7).map(String.init)
+			let possibleSections2 = (1...7).map(String.init)
+			let possibleSectionlessTitles2 = (1...142).map(String.init)
+			let possibleSections3 = (5...13).map(String.init)
+			let possibleSectionlessTitles3 = (1...51).map(String.init)
+			
+			var allEntities = [Entity]()
+			
+			/* First let’s insert a bit of data. */
+			print("Step 1: Inserts.")
+			let insertedEntities1 = try (0..<7).map{ _ in
+				try insertUniqueEntity(sections: possibleSections1, sectionlessTitles: possibleSectionlessTitles1, using: &randomGenerator)
+			}
+			allEntities.append(contentsOf: insertedEntities1)
+			context.processPendingChanges()
+			XCTAssertEqual(output.value, sections(from: frc))
+			
+			/* Now let’s move some elements around. */
+			print("Step 2: Moves.")
+			for _ in 0..<9 {
+				let entity = allEntities.randomElement(using: &randomGenerator)!
+				(entity.section, entity.title) = try uniqueEntityDescription(sections: possibleSections1, sectionlessTitles: possibleSectionlessTitles1, using: &randomGenerator)
+			}
+			context.processPendingChanges()
+			XCTAssertEqual(output.value, sections(from: frc))
+			
+			/* Let’s insert more data. */
+			print("Step 3: More inserts.")
+			let insertedEntities2 = try (0..<420).map{ _ in
+				try insertUniqueEntity(sections: possibleSections2, sectionlessTitles: possibleSectionlessTitles2, using: &randomGenerator)
+			}
+			allEntities.append(contentsOf: insertedEntities2)
+			context.processPendingChanges()
+			XCTAssertEqual(output.value, sections(from: frc))
+			
+			/* Now let’s move some elements around some more. */
+			print("Step 4: More moves.")
+			for _ in 0..<150 {
+				let entity = allEntities.randomElement(using: &randomGenerator)!
+				(entity.section, entity.title) = try uniqueEntityDescription(sections: possibleSections2, sectionlessTitles: possibleSectionlessTitles2, using: &randomGenerator)
+			}
+			context.processPendingChanges()
+			XCTAssertEqual(output.value, sections(from: frc))
+			
+			/* Let’s move, insert and delete elements randomly. */
+			print("Step 5: Moves, inserts and deletes at random.")
+			for i in 0..<250 {
+				switch UInt8.random(in: 0..<3, using: &randomGenerator) {
+					case 0:
+						/* Insert element. */
+						let entity = try insertUniqueEntity(sections: possibleSections3, sectionlessTitles: possibleSectionlessTitles3, using: &randomGenerator)
+						allEntities.append(entity)
+						
+					case 1:
+						/* Delete element. */
+						let idx = allEntities.indices.randomElement(using: &randomGenerator)!
+						context.delete(allEntities[idx])
+						allEntities.remove(at: idx)
+						
+					case 2:
+						/* Move element. */
+						let entity = allEntities.randomElement(using: &randomGenerator)!
+						(entity.section, entity.title) = try uniqueEntityDescription(sections: possibleSections3, sectionlessTitles: possibleSectionlessTitles3, using: &randomGenerator)
+						
+					default:
+						fatalError()
+				}
+			}
+			context.processPendingChanges()
+			XCTAssertEqual(output.value, sections(from: frc))
+			
+			/* A bit dirty, but it’ll do. */
+			tearDown(); try setUpWithError()
 		}
-		allEntities.append(contentsOf: insertedEntities1)
-		context.processPendingChanges()
-		XCTAssertEqual(output.value, sections(from: frc))
-		
-		/* Now let’s move some elements around. */
-		for _ in 0..<9 {
-			let entity = allEntities.randomElement(using: &randomGenerator)!
-			(entity.section, entity.title) = try uniqueEntityDescription(sections: possibleSections1, sectionlessTitles: possibleSectionlessTitles1, using: &randomGenerator)
-		}
-		context.processPendingChanges()
-		XCTAssertEqual(output.value, sections(from: frc))
-		
-		/* Let’s insert more data. */
-		let insertedEntities2 = try (0..<420).map{ _ in
-			try insertUniqueEntity(sections: possibleSections2, sectionlessTitles: possibleSectionlessTitles2, using: &randomGenerator)
-		}
-		allEntities.append(contentsOf: insertedEntities2)
-		context.processPendingChanges()
-		XCTAssertEqual(output.value, sections(from: frc))
-		
-		/* Now let’s move some elements around. */
-		for _ in 0..<150 {
-			let entity = allEntities.randomElement(using: &randomGenerator)!
-			(entity.section, entity.title) = try uniqueEntityDescription(sections: possibleSections2, sectionlessTitles: possibleSectionlessTitles2, using: &randomGenerator)
-		}
-		context.processPendingChanges()
-		XCTAssertEqual(output.value, sections(from: frc))
 	}
 	
 	func uniqueEntityDescription<T : RandomNumberGenerator>(sections: [String], sectionlessTitles: [String], using generator: inout T) throws -> (section: String, title: String) {
@@ -412,9 +520,10 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 			didChangeSectionBlock: { type, sectionIndex, sectionInfo            in aggregator.addSectionChange(type, atSectionIndex: sectionIndex, sectionName: sectionInfo.name) },
 			didChangeRowBlock:     { type, srcIndexPath, newIndexPath, anObject in aggregator.addRowChange(type, atIndexPath: srcIndexPath, newIndexPath: newIndexPath, for: (anObject as! NSManagedObject).objectID) },
 			didChangeBlock:        {                                               aggregator.iterateAggregatedChanges{ change in
+				print(change)
 				switch change {
-					case let .section(.insert(dstIdx), name):                                            output.value.insert(Section(name: name), at: dstIdx)
-					case let .section(.delete(srcIdx), name): assert(output.value[srcIdx].name == name); output.value.remove(at: srcIdx)
+					case let .section(.insert(dstIdx), name):                                                                                     output.value.insert(Section(name: name), at: dstIdx)
+					case let .section(.delete(srcIdx), name): assert(output.value[srcIdx].name == name && output.value[srcIdx].contents.isEmpty); output.value.remove(at: srcIdx)
 						
 					case let .row(.insert(dstPath), id):                                                                      output.value[dstPath.secIdx].contents.insert(id, at: dstPath.rowIdx)
 					case let .row(.delete(srcPath), id): assert(output.value[srcPath.secIdx].contents[srcPath.rowIdx] == id); output.value[srcPath.secIdx].contents.remove(at: srcPath.rowIdx)
@@ -433,6 +542,19 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 		var name: String
 		var contents: [NSManagedObjectID] = []
 		
+	}
+	
+	private func prettyPrintSections(_ prefix: String = "", _ sections: [Section]) {
+		print("\(prefix)[")
+		sections.forEach{
+			print("  \($0.name): ", terminator: "")
+			let titles = $0.contents.map{
+				let entity = context.object(with: $0) as! Entity
+				return entity.title ?? "<notitle>"
+			}.joined(separator: ", ")
+			print("[\(titles)]")
+		}
+		print("]")
 	}
 	
 }
