@@ -278,14 +278,14 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 		try monitor.startMonitor(controller: frc, context: context)
 		
 		assert(output.value == sections(from: frc))
-		prettyPrintSections("ori: ", output.value)
+//		prettyPrintSections("ori: ", output.value)
 		
 		(s4e1.title, s4e1.section) = ("0-2", "0")
 		(s2e2.title, s2e2.section) = ("1-2", "1")
 		context.processPendingChanges()
 		
-		prettyPrintSections("ref: ", sections(from: frc))
-		prettyPrintSections("cmp: ", output.value)
+//		prettyPrintSections("ref: ", sections(from: frc))
+//		prettyPrintSections("cmp: ", output.value)
 		XCTAssertEqual(output.value, sections(from: frc))
 	}
 	
@@ -312,7 +312,7 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 		try monitor.startMonitor(controller: frc, context: context)
 		
 		XCTAssertEqual(output.value, sections(from: frc))
-		prettyPrintSections("ori: ", output.value)
+//		prettyPrintSections("ori: ", output.value)
 		
 		(s3e1.section, s3e1.title) = ("0", "0-1")
 		(s3e0.section, s3e0.title) = ("2", "2-0")
@@ -322,8 +322,8 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 //		(s4e0.section, s4e0.title) = ("0", "0-0")
 		context.processPendingChanges()
 		
-		prettyPrintSections("ref: ", sections(from: frc))
-		prettyPrintSections("cmp: ", output.value)
+//		prettyPrintSections("ref: ", sections(from: frc))
+//		prettyPrintSections("cmp: ", output.value)
 		XCTAssertEqual(output.value, sections(from: frc))
 	}
 	
@@ -436,7 +436,7 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 			
 			/* Let’s move, insert and delete elements randomly. */
 			print("Step 5: Moves, inserts and deletes at random.")
-			for i in 0..<250 {
+			for _ in 0..<250 {
 				switch UInt8.random(in: 0..<3, using: &randomGenerator) {
 					case 0:
 						/* Insert element. */
@@ -520,7 +520,7 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 			didChangeSectionBlock: { type, sectionIndex, sectionInfo            in aggregator.addSectionChange(type, atSectionIndex: sectionIndex, sectionName: sectionInfo.name) },
 			didChangeRowBlock:     { type, srcIndexPath, newIndexPath, anObject in aggregator.addRowChange(type, atIndexPath: srcIndexPath, newIndexPath: newIndexPath, for: (anObject as! NSManagedObject).objectID) },
 			didChangeBlock:        {                                               aggregator.iterateAggregatedChanges{ change in
-				print(change)
+//				print(change)
 				switch change {
 					case let .section(.insert(dstIdx), name):                                                                                     output.value.insert(Section(name: name), at: dstIdx)
 					case let .section(.delete(srcIdx), name): assert(output.value[srcIdx].name == name && output.value[srcIdx].contents.isEmpty); output.value.remove(at: srcIdx)
