@@ -289,6 +289,37 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 		XCTAssertEqual(output.value, sections(from: frc))
 	}
 	
+	func testTwoConsecutiveSectionDeletesFromMoves() throws {
+		let s2e1 = Entity(context: context, title: "2-1", section: "2")
+		let s2e2 = Entity(context: context, title: "2-2", section: "2")
+		let s4e1 = Entity(context: context, title: "4-1", section: "4")
+		let s4e2 = Entity(context: context, title: "4-2", section: "4")
+		context.processPendingChanges()
+		
+		let output = Ref([
+			Section(name: "2", contents: [s2e1.objectID, s2e2.objectID]),
+			Section(name: "4", contents: [s4e1.objectID, s4e2.objectID]),
+		])
+		let monitor = aggregatorMonitor(for: .init(), output: output)
+//		let monitor = printMonitor
+		
+		let frc = createFRC()
+		try monitor.startMonitor(controller: frc, context: context)
+		
+		assert(output.value == sections(from: frc))
+		prettyPrintSections("ori: ", output.value)
+		
+		(s4e1.title, s4e1.section) = ("0-2", "0")
+		(s4e2.title, s4e2.section) = ("0-1", "0")
+		(s2e2.title, s2e2.section) = ("1-2", "1")
+		(s2e1.title, s2e1.section) = ("1-1", "1")
+		context.processPendingChanges()
+		
+		prettyPrintSections("ref: ", sections(from: frc))
+		prettyPrintSections("cmp: ", output.value)
+		XCTAssertEqual(output.value, sections(from: frc))
+	}
+	
 	func testFailureFoundFromRandomTest() throws {
 		let s1e0 = Entity(context: context, title: "1-0", section: "1")
 		let s1e1 = Entity(context: context, title: "1-1", section: "1")
@@ -341,36 +372,42 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 		let possibleSectionlessTitles1 = (1...9).map(String.init)
 		let possibleSectionlessTitles2 = (1...1420).map(String.init)
 		
-		var allEntities = [Entity]()
+		var allEntities = [String: Entity]()
 		
 		/* First let’s insert a bit of data. */
-		let insertedEntities1 = try (0..<7).map{ _ in
-			try insertUniqueEntity(sections: possibleSections, sectionlessTitles: possibleSectionlessTitles1, using: &randomGenerator)
+		for _ in 0..<7 {
+			let e = try insertUniqueEntity(sections: possibleSections, sectionlessTitles: possibleSectionlessTitles1, useCache: allEntities, using: &randomGenerator)
+			allEntities[e.title!] = e
 		}
-		allEntities.append(contentsOf: insertedEntities1)
 		context.processPendingChanges()
 		XCTAssertEqual(output.value, sections(from: frc))
 		
 		/* Now let’s move some elements around. */
 		for _ in 0..<9 {
-			let entity = allEntities.randomElement(using: &randomGenerator)!
-			(entity.section, entity.title) = try uniqueEntityDescription(sections: possibleSections, sectionlessTitles: possibleSectionlessTitles1, using: &randomGenerator)
+			let entityTitle = allEntities.keys.sorted().randomElement(using: &randomGenerator)!
+			let entity = allEntities[entityTitle]!
+			(entity.section, entity.title) = try uniqueEntityDescription(sections: possibleSections, sectionlessTitles: possibleSectionlessTitles1, useCache: allEntities, using: &randomGenerator)
+			allEntities[entity.title!] = entity
+			allEntities[entityTitle] = nil
 		}
 		context.processPendingChanges()
 		XCTAssertEqual(output.value, sections(from: frc))
 		
 		/* Let’s insert more data. */
-		let insertedEntities2 = try (0..<420).map{ _ in
-			try insertUniqueEntity(sections: possibleSections, sectionlessTitles: possibleSectionlessTitles2, using: &randomGenerator)
+		for _ in 0..<420 {
+			let e = try insertUniqueEntity(sections: possibleSections, sectionlessTitles: possibleSectionlessTitles2, useCache: allEntities, using: &randomGenerator)
+			allEntities[e.title!] = e
 		}
-		allEntities.append(contentsOf: insertedEntities2)
 		context.processPendingChanges()
 		XCTAssertEqual(output.value, sections(from: frc))
 		
-		/* Now let’s move some elements around. */
+		/* Now let’s move some more elements around. */
 		for _ in 0..<150 {
-			let entity = allEntities.randomElement(using: &randomGenerator)!
-			(entity.section, entity.title) = try uniqueEntityDescription(sections: possibleSections, sectionlessTitles: possibleSectionlessTitles2, using: &randomGenerator)
+			let entityTitle = allEntities.keys.sorted().randomElement(using: &randomGenerator)!
+			let entity = allEntities[entityTitle]!
+			(entity.section, entity.title) = try uniqueEntityDescription(sections: possibleSections, sectionlessTitles: possibleSectionlessTitles2, useCache: allEntities, using: &randomGenerator)
+			allEntities[entity.title!] = entity
+			allEntities[entityTitle] = nil
 		}
 		context.processPendingChanges()
 		XCTAssertEqual(output.value, sections(from: frc))
@@ -394,42 +431,48 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 			let possibleSections2 = (1...7).map(String.init)
 			let possibleSectionlessTitles2 = (1...142).map(String.init)
 			let possibleSections3 = (5...13).map(String.init)
-			let possibleSectionlessTitles3 = (1...51).map(String.init)
+			let possibleSectionlessTitles3 = (1...501).map(String.init)
 			
-			var allEntities = [Entity]()
+			var allEntities = [String: Entity]()
 			
 			/* First let’s insert a bit of data. */
 			print("Step 1: Inserts.")
-			let insertedEntities1 = try (0..<7).map{ _ in
-				try insertUniqueEntity(sections: possibleSections1, sectionlessTitles: possibleSectionlessTitles1, using: &randomGenerator)
+			for _ in 0..<7 {
+				let e = try insertUniqueEntity(sections: possibleSections1, sectionlessTitles: possibleSectionlessTitles1, useCache: allEntities, using: &randomGenerator)
+				allEntities[e.title!] = e
 			}
-			allEntities.append(contentsOf: insertedEntities1)
 			context.processPendingChanges()
 			XCTAssertEqual(output.value, sections(from: frc))
 			
 			/* Now let’s move some elements around. */
 			print("Step 2: Moves.")
 			for _ in 0..<9 {
-				let entity = allEntities.randomElement(using: &randomGenerator)!
-				(entity.section, entity.title) = try uniqueEntityDescription(sections: possibleSections1, sectionlessTitles: possibleSectionlessTitles1, using: &randomGenerator)
+				let entityTitle = allEntities.keys.sorted().randomElement(using: &randomGenerator)!
+				let entity = allEntities[entityTitle]!
+				(entity.section, entity.title) = try uniqueEntityDescription(sections: possibleSections1, sectionlessTitles: possibleSectionlessTitles1, useCache: allEntities, using: &randomGenerator)
+				allEntities[entity.title!] = entity
+				allEntities[entityTitle] = nil
 			}
 			context.processPendingChanges()
 			XCTAssertEqual(output.value, sections(from: frc))
 			
 			/* Let’s insert more data. */
 			print("Step 3: More inserts.")
-			let insertedEntities2 = try (0..<420).map{ _ in
-				try insertUniqueEntity(sections: possibleSections2, sectionlessTitles: possibleSectionlessTitles2, using: &randomGenerator)
+			for _ in 0..<420 {
+				let e = try insertUniqueEntity(sections: possibleSections2, sectionlessTitles: possibleSectionlessTitles2, useCache: allEntities, using: &randomGenerator)
+				allEntities[e.title!] = e
 			}
-			allEntities.append(contentsOf: insertedEntities2)
 			context.processPendingChanges()
 			XCTAssertEqual(output.value, sections(from: frc))
 			
 			/* Now let’s move some elements around some more. */
 			print("Step 4: More moves.")
 			for _ in 0..<150 {
-				let entity = allEntities.randomElement(using: &randomGenerator)!
-				(entity.section, entity.title) = try uniqueEntityDescription(sections: possibleSections2, sectionlessTitles: possibleSectionlessTitles2, using: &randomGenerator)
+				let entityTitle = allEntities.keys.sorted().randomElement(using: &randomGenerator)!
+				let entity = allEntities[entityTitle]!
+				(entity.section, entity.title) = try uniqueEntityDescription(sections: possibleSections2, sectionlessTitles: possibleSectionlessTitles2, useCache: allEntities, using: &randomGenerator)
+				allEntities[entity.title!] = entity
+				allEntities[entityTitle] = nil
 			}
 			context.processPendingChanges()
 			XCTAssertEqual(output.value, sections(from: frc))
@@ -437,26 +480,34 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 			/* Let’s move, insert and delete elements randomly. */
 			print("Step 5: Moves, inserts and deletes at random.")
 			for _ in 0..<250 {
-				switch UInt8.random(in: 0..<3, using: &randomGenerator) {
-					case 0:
-						/* Insert element. */
-						let entity = try insertUniqueEntity(sections: possibleSections3, sectionlessTitles: possibleSectionlessTitles3, using: &randomGenerator)
-						allEntities.append(entity)
-						
-					case 1:
-						/* Delete element. */
-						let idx = allEntities.indices.randomElement(using: &randomGenerator)!
-						context.delete(allEntities[idx])
-						allEntities.remove(at: idx)
-						
-					case 2:
-						/* Move element. */
-						let entity = allEntities.randomElement(using: &randomGenerator)!
-						(entity.section, entity.title) = try uniqueEntityDescription(sections: possibleSections3, sectionlessTitles: possibleSectionlessTitles3, using: &randomGenerator)
-						
-					default:
-						fatalError()
+				for _ in 0..<Int.random(in: 5..<250, using: &randomGenerator) {
+					switch UInt8.random(in: 0..<3, using: &randomGenerator) {
+						case 0:
+							/* Insert element. */
+							let e = try insertUniqueEntity(sections: possibleSections3, sectionlessTitles: possibleSectionlessTitles3, useCache: allEntities, using: &randomGenerator)
+							allEntities[e.title!] = e
+							
+						case 1:
+							/* Delete element. */
+							let title = allEntities.keys.sorted().randomElement(using: &randomGenerator)!
+							context.delete(allEntities[title]!)
+							allEntities[title] = nil
+							
+						case 2:
+							/* Move element. */
+							let entityTitle = allEntities.keys.sorted().randomElement(using: &randomGenerator)!
+							let entity = allEntities[entityTitle]!
+							(entity.section, entity.title) = try uniqueEntityDescription(sections: possibleSections3, sectionlessTitles: possibleSectionlessTitles3, useCache: allEntities, using: &randomGenerator)
+							allEntities[entity.title!] = entity
+							allEntities[entityTitle] = nil
+							
+						default:
+							fatalError()
+					}
 				}
+				/* Got other crash when uncommenting that one. */
+//				context.processPendingChanges()
+//				XCTAssertEqual(output.value, sections(from: frc))
 			}
 			context.processPendingChanges()
 			XCTAssertEqual(output.value, sections(from: frc))
@@ -466,12 +517,12 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 		}
 	}
 	
-	func uniqueEntityDescription<T : RandomNumberGenerator>(sections: [String], sectionlessTitles: [String], using generator: inout T) throws -> (section: String, title: String) {
+	func uniqueEntityDescription<T : RandomNumberGenerator>(sections: [String], sectionlessTitles: [String], useCache cache: [String: Entity]? = nil, using generator: inout T) throws -> (section: String, title: String) {
 //		print("searching")
 		while true {
 			let section = sections.randomElement(using: &generator)!
 			let title = section + "-" + sectionlessTitles.randomElement(using: &generator)!
-			if try onlyEntity(withTitle: title) == nil {
+			if try onlyEntity(withTitle: title, useCache: cache) == nil {
 //				print("found \(title)")
 				return (section, title)
 			}
@@ -479,21 +530,30 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 	}
 	
 	@discardableResult
-	func insertUniqueEntity<T : RandomNumberGenerator>(sections: [String], sectionlessTitles: [String], using generator: inout T) throws -> Entity {
-		let (section, title) = try uniqueEntityDescription(sections: sections, sectionlessTitles: sectionlessTitles, using: &generator)
+	func insertUniqueEntity<T : RandomNumberGenerator>(sections: [String], sectionlessTitles: [String], useCache cache: [String: Entity]? = nil, using generator: inout T) throws -> Entity {
+		let (section, title) = try uniqueEntityDescription(sections: sections, sectionlessTitles: sectionlessTitles, useCache: cache, using: &generator)
 		return Entity(context: context, title: title, section: section)
 	}
 	
-	func onlyEntity(withTitle title: String, crashOnMultiple: Bool = true) throws -> Entity? {
-		let request = Entity.fetchRequest() as! NSFetchRequest<Entity>
-		request.predicate = NSPredicate(format: "%K == %@", #keyPath(Entity.title), title)
-		let entities = try context.fetch(request)
-		guard entities.count < 2 else {
+	func onlyEntity(withTitle title: String, crashOnMultiple: Bool = true, useCache cache: [String: Entity]? = nil) throws -> Entity? {
+		let matching: [Entity]
+		if let cache {
+			/* Note: We cannot detect multiple entities w/ the same title when using the cache… */
+			matching = cache[title].flatMap{ [$0] } ?? []
+		} else {
+			assertionFailure("Use this if you’re sure, but it will process the pending changes!")
+			let request = Entity.fetchRequest() as! NSFetchRequest<Entity>
+			request.predicate = NSPredicate(format: "%K == %@", #keyPath(Entity.title), title)
+			matching = try context.fetch(request)
+		}
+		
+		guard matching.count < 2 else {
 			if crashOnMultiple {fatalError()}
 			return nil
 		}
-		return entities.first
+		return matching.first
 	}
+	
 	private func sections(from frc: NSFetchedResultsController<Entity>) -> [Section] {
 		return frc.sections!.map{ section in Section(name: section.name, contents: (section.objects as! [Entity]).map(\.objectID)) }
 	}
@@ -520,7 +580,7 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 			didChangeSectionBlock: { type, sectionIndex, sectionInfo            in aggregator.addSectionChange(type, atSectionIndex: sectionIndex, sectionName: sectionInfo.name) },
 			didChangeRowBlock:     { type, srcIndexPath, newIndexPath, anObject in aggregator.addRowChange(type, atIndexPath: srcIndexPath, newIndexPath: newIndexPath, for: (anObject as! NSManagedObject).objectID) },
 			didChangeBlock:        {                                               aggregator.iterateAggregatedChanges{ change in
-//				print(change)
+				print(change)
 				switch change {
 					case let .section(.insert(dstIdx), name):                                                                                     output.value.insert(Section(name: name), at: dstIdx)
 					case let .section(.delete(srcIdx), name): assert(output.value[srcIdx].name == name && output.value[srcIdx].contents.isEmpty); output.value.remove(at: srcIdx)
