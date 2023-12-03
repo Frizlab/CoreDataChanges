@@ -112,6 +112,12 @@ public final class CoreDataChangesAggregator<RowItemID> {
 			assert(currentChange.__sectionAdjusted)
 			currentChange.__idx = i
 			
+//			if #available(macOS 11.0, tvOS 14.0, iOS 14.0, watchOS 7.0, *) {
+//				Logger.main.trace("-----")
+//				Logger.main.trace("\(currentChange, privacy: .public)")
+//				Logger.main.trace("----")
+//			}
+//			prettyPrintRowChanges(currentMovingRowChanges)
 			if currentChange.isInsert, let linkedChange = currentChange.linkedChangeForMove, linkedChange.__idx != i-1 {
 				assert(i > 0, "INTERNAL LOGIC ERROR")
 				assert(currentChange.__idx == i, "INTERNAL LOGIC ERROR")
@@ -154,6 +160,9 @@ public final class CoreDataChangesAggregator<RowItemID> {
 							assertionFailure("INTERNAL LOGIC ERROR")
 					}
 					currentMovingRowChanges.swapAt(j, j-1)
+					currentMovingRowChanges[j].__idx = j
+					currentMovingRowChanges[j-1].__idx = j-1
+//					prettyPrintRowChanges(currentMovingRowChanges)
 				}
 			}
 			i += 1
@@ -186,5 +195,11 @@ public final class CoreDataChangesAggregator<RowItemID> {
 	
 	private var currentMovingRowChanges = [RowChangeInfo<RowItemID>]()
 	private var currentStaticRowChanges = [RowChangeInfo<RowItemID>]()
+	
+	private func prettyPrintRowChanges(_ changes: [RowChangeInfo<RowItemID>]) {
+		if #available(macOS 11.0, tvOS 14.0, iOS 14.0, watchOS 7.0, *) {
+			Logger.main.trace("[\n\(changes.map{ "  \($0)" }.joined(separator: "\n"), privacy: .public)\n]")
+		}
+	}
 	
 }
