@@ -86,8 +86,8 @@ public final class CoreDataChangesAggregator<RowItemID> {
 		var currentDeleteDelta = 0
 		var sectionDeleteDeltas = [Int]()
 		for (idx, delete) in currentSectionDeletes.enumerated() {
-			let idx = adjustSrcIdx(idx, withInsertDeltas: sectionInsertDeltas)
 			if delete != nil {
+				let idx = adjustSrcIdx(idx, withInsertDeltas: sectionInsertDeltas)
 				let deltaIdx = idx - currentDeleteDelta
 				assert(deltaIdx >= 0)
 				sectionDeleteDeltas.extendForDeltas(minCount: deltaIdx + 1)
