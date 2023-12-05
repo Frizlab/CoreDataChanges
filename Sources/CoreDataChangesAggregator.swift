@@ -91,24 +91,38 @@ public final class CoreDataChangesAggregator<RowItemID> {
 //					}
 					fallthrough
 				case let (curDelete?, nil):
-					let idx = adjustSrcIdx(curDelete.idx, withInsertDeltas: sectionInsertDeltas)
-					let deltaIdx = idx - curDeleteDelta
+					/* curDelete.idx contains the actual index on which the delete operation will take place.
+					 * deltaIdx contains the index of the sectionDeleteDeltas that should be modified.
+					 * The general idea is if we delete 3 sections in a row (pun not intended),
+					 *  the section delta will be modified by the amount of deletions as soon as the first index of the deletion group.
+					 * Example:
+					 *    Let’s take the following collection: [1, 2, 3, 4, 5].
+					 *    Let’s assume 1, 2 and 3 are deleted, 4 and 5 are not.
+					 *    The insertion index will have to be moved by 3 whether we have an insertion at index 0, 1 or 2.
+					 *    We thus have a sectionDeleteDeltas set to [3] (which means add 3 to the insertions that are equal or higher than 0). */
+					curDelete.idx = adjustSrcIdx(curDelete.idx, withInsertDeltas: sectionInsertDeltas)
+					let deltaIdx = curDelete.idx - curDeleteDelta
 					assert(deltaIdx >= 0)
+					
 					curDeleteDelta += 1
 					sectionDeleteDeltas.extendForDeltas(minCount: deltaIdx + 1)
 					sectionDeleteDeltas[deltaIdx] = curDeleteDelta
-					curDelete.idx = idx
+					
 					curDeleteIdx += 1
 					
 				case let (_, curInsert?):
-					let idx = adjustDstIdx(curInsert.idx, withDeleteDeltas: sectionDeleteDeltas)
-					let deltaIdx = idx - curInsertDelta
-					assert(idx >= 0)
+					curInsert.idx = adjustDstIdx(curInsert.idx, withDeleteDeltas: sectionDeleteDeltas)
+					let deltaIdx = curInsert.idx - curInsertDelta
+					assert(deltaIdx >= 0)
+					
 					curInsertDelta += 1
 					sectionInsertDeltas.extendForDeltas(minCount: deltaIdx + 1)
 					sectionInsertDeltas[deltaIdx] = curInsertDelta
-					handler(.section(.insert(dstIdx: idx), curInsert.name))
+					
 					curInsertIdx += 1
+					
+					/* We can call the insert directly here. */
+					handler(.section(.insert(dstIdx: curInsert.idx), curInsert.name))
 					
 				case (nil, nil):
 					assertionFailure("INTERNAL LOGIC ERROR")
