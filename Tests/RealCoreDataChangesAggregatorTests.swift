@@ -351,6 +351,134 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 		XCTAssertEqual(output.value, sections(from: frc))
 	}
 	
+	func testSectionInsertsAfterMoreSectionDeletes() throws {
+		let s0e1 = Entity(context: context, title: "0-1", section: "0")
+		let s1e1 = Entity(context: context, title: "1-1", section: "1")
+		let s2e1 = Entity(context: context, title: "2-1", section: "2")
+		let s3e1 = Entity(context: context, title: "3-1", section: "3")
+		context.processPendingChanges()
+		
+		let output = Ref([
+			Section(name: "0", contents: [s0e1.objectID]),
+			Section(name: "1", contents: [s1e1.objectID]),
+			Section(name: "2", contents: [s2e1.objectID]),
+			Section(name: "3", contents: [s3e1.objectID]),
+		])
+		let monitor = aggregatorMonitor(for: .init(), output: output)
+//		let monitor = printMonitor
+		
+		let frc = createFRC()
+		try monitor.startMonitor(controller: frc, context: context)
+		
+		assert(output.value == sections(from: frc))
+		prettyPrintSections("ori: ", output.value)
+		
+		context.delete(s2e1)
+		(s0e1.title, s0e1.section) = ("4-0", "4")
+		(s1e1.title, s1e1.section) = ("5-0", "5")
+		context.processPendingChanges()
+		
+		prettyPrintSections("ref: ", sections(from: frc))
+		prettyPrintSections("cmp: ", output.value)
+		XCTAssertEqual(output.value, sections(from: frc))
+	}
+	
+	func testSectionInsertsBeforeAndAfterMoreSectionDeletes() throws {
+		let s1e1 = Entity(context: context, title: "1-1", section: "1")
+		let s2e1 = Entity(context: context, title: "2-1", section: "2")
+		let s3e1 = Entity(context: context, title: "3-1", section: "3")
+		let s4e1 = Entity(context: context, title: "4-1", section: "4")
+		context.processPendingChanges()
+		
+		let output = Ref([
+			Section(name: "1", contents: [s1e1.objectID]),
+			Section(name: "2", contents: [s2e1.objectID]),
+			Section(name: "3", contents: [s3e1.objectID]),
+			Section(name: "4", contents: [s4e1.objectID]),
+		])
+		let monitor = aggregatorMonitor(for: .init(), output: output)
+//		let monitor = printMonitor
+		
+		let frc = createFRC()
+		try monitor.startMonitor(controller: frc, context: context)
+		
+		assert(output.value == sections(from: frc))
+		prettyPrintSections("ori: ", output.value)
+		
+		context.delete(s3e1)
+		(s1e1.title, s1e1.section) = ("5-0", "5")
+		(s2e1.title, s2e1.section) = ("6-0", "6")
+		_ = Entity(context: context, title: "0-1", section: "0")
+		context.processPendingChanges()
+		
+		prettyPrintSections("ref: ", sections(from: frc))
+		prettyPrintSections("cmp: ", output.value)
+		XCTAssertEqual(output.value, sections(from: frc))
+	}
+	
+	func testSectionInsertsAfterEvenMoreSectionDeletes() throws {
+		let s0e1 = Entity(context: context, title: "0-1", section: "0")
+		let s1e1 = Entity(context: context, title: "1-1", section: "1")
+		let s2e1 = Entity(context: context, title: "2-1", section: "2")
+		let s3e1 = Entity(context: context, title: "3-1", section: "3")
+		context.processPendingChanges()
+		
+		let output = Ref([
+			Section(name: "0", contents: [s0e1.objectID]),
+			Section(name: "1", contents: [s1e1.objectID]),
+			Section(name: "2", contents: [s2e1.objectID]),
+			Section(name: "3", contents: [s3e1.objectID]),
+		])
+		let monitor = aggregatorMonitor(for: .init(), output: output)
+//		let monitor = printMonitor
+		
+		let frc = createFRC()
+		try monitor.startMonitor(controller: frc, context: context)
+		
+		assert(output.value == sections(from: frc))
+		prettyPrintSections("ori: ", output.value)
+		
+		context.delete(s3e1)
+		context.delete(s2e1)
+		(s0e1.title, s0e1.section) = ("4-0", "4")
+		(s1e1.title, s1e1.section) = ("5-0", "5")
+		context.processPendingChanges()
+		
+		prettyPrintSections("ref: ", sections(from: frc))
+		prettyPrintSections("cmp: ", output.value)
+		XCTAssertEqual(output.value, sections(from: frc))
+	}
+	
+	func testFullMove() throws {
+		let s0e1 = Entity(context: context, title: "0-1", section: "0")
+		let s1e1 = Entity(context: context, title: "1-1", section: "1")
+		let s2e1 = Entity(context: context, title: "2-1", section: "2")
+		context.processPendingChanges()
+		
+		let output = Ref([
+			Section(name: "0", contents: [s0e1.objectID]),
+			Section(name: "1", contents: [s1e1.objectID]),
+			Section(name: "2", contents: [s2e1.objectID]),
+		])
+		let monitor = aggregatorMonitor(for: .init(), output: output)
+//		let monitor = printMonitor
+		
+		let frc = createFRC()
+		try monitor.startMonitor(controller: frc, context: context)
+		
+		assert(output.value == sections(from: frc))
+		prettyPrintSections("ori: ", output.value)
+		
+		(s0e1.title, s0e1.section) = ("3-0", "3")
+		(s1e1.title, s1e1.section) = ("4-0", "4")
+		(s2e1.title, s2e1.section) = ("5-0", "5")
+		context.processPendingChanges()
+		
+		prettyPrintSections("ref: ", sections(from: frc))
+		prettyPrintSections("cmp: ", output.value)
+		XCTAssertEqual(output.value, sections(from: frc))
+	}
+	
 	func testFailureFoundFromRandomTest() throws {
 		let s1e0 = Entity(context: context, title: "1-0", section: "1")
 		let s1e1 = Entity(context: context, title: "1-1", section: "1")
@@ -541,6 +669,8 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 //				XCTAssertEqual(output.value, sections(from: frc))
 			}
 			context.processPendingChanges()
+			prettyPrintSections("ref: ", sections(from: frc))
+			prettyPrintSections("cmp: ", output.value)
 			XCTAssertEqual(output.value, sections(from: frc))
 			
 			/* A bit dirty, but it’ll do. */

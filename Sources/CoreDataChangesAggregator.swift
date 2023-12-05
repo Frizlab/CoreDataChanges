@@ -11,8 +11,8 @@ public final class CoreDataChangesAggregator<RowItemID> {
 	
 	public func addSectionChange(_ changeType: NSFetchedResultsChangeType, atSectionIndex sectionIndex: Int, sectionName: String) {
 		switch changeType.rawValue {
-			case NSFetchedResultsChangeType.insert.rawValue: currentSectionInserts.addSectionChange(name: sectionName, at: sectionIndex)
-			case NSFetchedResultsChangeType.delete.rawValue: currentSectionDeletes.addSectionChange(name: sectionName, at: sectionIndex)
+			case NSFetchedResultsChangeType.delete.rawValue: currentSectionDeletes.append(SectionInfo(idx: sectionIndex, name: sectionName))
+			case NSFetchedResultsChangeType.insert.rawValue: currentSectionInserts.append(SectionInfo(idx: sectionIndex, name: sectionName))
 			case NSFetchedResultsChangeType.update.rawValue, NSFetchedResultsChangeType.move.rawValue:
 				/* The update and move change type are invalid for a section change.
 				 * We only do an assertion failure and not a fatal error because CoreData is capricious and I don’t trust it (see next case). */
@@ -30,9 +30,9 @@ public final class CoreDataChangesAggregator<RowItemID> {
 		 * Known case is for the update, where from iOS 7.1 the update gets a destination index.
 		 * See <http://stackoverflow.com/a/32213076>. */
 		switch changeType.rawValue {
-			case NSFetchedResultsChangeType.update.rawValue: currentStaticRowChanges.append(RowChangeInfo(change: .update(srcPath: .init(indexPath: srcIndexPath!)!), itemID: object)); //; assert(dstIndexPath == nil)
-			case NSFetchedResultsChangeType.insert.rawValue: currentMovingRowChanges.append(RowChangeInfo(change: .insert(dstPath: .init(indexPath: dstIndexPath!)!), itemID: object)); //; assert(srcIndexPath == nil)
 			case NSFetchedResultsChangeType.delete.rawValue: currentMovingRowChanges.append(RowChangeInfo(change: .delete(srcPath: .init(indexPath: srcIndexPath!)!), itemID: object)); //; assert(dstIndexPath == nil)
+			case NSFetchedResultsChangeType.insert.rawValue: currentMovingRowChanges.append(RowChangeInfo(change: .insert(dstPath: .init(indexPath: dstIndexPath!)!), itemID: object)); //; assert(srcIndexPath == nil)
+			case NSFetchedResultsChangeType.update.rawValue: currentStaticRowChanges.append(RowChangeInfo(change: .update(srcPath: .init(indexPath: srcIndexPath!)!), itemID: object)); //; assert(dstIndexPath == nil)
 			case NSFetchedResultsChangeType.move.rawValue:
 				let update1 = RowChangeInfo(change: .delete(srcPath: .init(indexPath: srcIndexPath!)!), itemID: object)
 				let update2 = RowChangeInfo(change: .insert(dstPath: .init(indexPath: dstIndexPath!)!), itemID: object)
@@ -50,13 +50,13 @@ public final class CoreDataChangesAggregator<RowItemID> {
 	}
 	
 	public var isEmpty: Bool {
-		currentSectionInserts.isEmpty && currentSectionDeletes.isEmpty &&
+		currentSectionDeletes.isEmpty && currentSectionInserts.isEmpty &&
 		currentStaticRowChanges.isEmpty && currentMovingRowChanges.isEmpty
 	}
 	
 	public func removeAllChanges() {
-		currentSectionInserts.removeAll()
 		currentSectionDeletes.removeAll()
+		currentSectionInserts.removeAll()
 		currentStaticRowChanges.removeAll()
 		currentMovingRowChanges.removeAll()
 	}
@@ -71,29 +71,52 @@ public final class CoreDataChangesAggregator<RowItemID> {
 		}
 		
 		/* ********* Compute the inserts/deletes deltas. ********* */
-		var currentInsertDelta = 0
-		var sectionInsertDeltas = [Int]()
-		for (idx, insert) in currentSectionInserts.enumerated() {
-			if let insert {
-				handler(.section(.insert(dstIdx: idx), insert))
-				let deltaIdx = idx - currentInsertDelta
-				assert(deltaIdx >= 0)
-				sectionInsertDeltas.extendForDeltas(minCount: deltaIdx + 1)
-				currentInsertDelta += 1
-				sectionInsertDeltas[deltaIdx] = currentInsertDelta
+		currentSectionDeletes.sort{ $0.idx < $1.idx }
+		currentSectionInserts.sort{ $0.idx < $1.idx }
+		var curDeleteDelta = 0, sectionDeleteDeltas = [Int]()
+		var curInsertDelta = 0, sectionInsertDeltas = [Int]()
+		var curDeleteIdx = 0, nDeletes = currentSectionDeletes.count
+		var curInsertIdx = 0, nInserts = currentSectionInserts.count
+		while curDeleteIdx < nDeletes || curInsertIdx < nInserts {
+			let curDelete = currentSectionDeletes[safe: curDeleteIdx]
+			let curInsert = currentSectionInserts[safe: curInsertIdx]
+			switch (curDelete, curInsert) {
+				case let (curDelete?, curInsert?) where
+					(
+						adjustSrcIdx(curDelete.idx, withInsertDeltas: sectionInsertDeltas) - curDeleteDelta <=
+						adjustDstIdx(curInsert.idx, withDeleteDeltas: sectionDeleteDeltas) - curInsertDelta
+					):
+					if #available(macOS 11.0, tvOS 14.0, iOS 14.0, watchOS 7.0, *) {
+						Logger.main.trace("In delete and insert \(curDelete) - \(curInsert)")
+					}
+					fallthrough
+				case let (curDelete?, nil):
+					let idx = adjustSrcIdx(curDelete.idx, withInsertDeltas: sectionInsertDeltas)
+					let deltaIdx = idx - curDeleteDelta
+					assert(deltaIdx >= 0)
+					curDeleteDelta += 1
+					sectionDeleteDeltas.extendForDeltas(minCount: deltaIdx + 1)
+					sectionDeleteDeltas[deltaIdx] = curDeleteDelta
+					curDelete.idx = idx
+					curDeleteIdx += 1
+					
+				case let (_, curInsert?):
+					let idx = adjustDstIdx(curInsert.idx, withDeleteDeltas: sectionDeleteDeltas)
+					let deltaIdx = idx - curInsertDelta
+					assert(idx >= 0)
+					curInsertDelta += 1
+					sectionInsertDeltas.extendForDeltas(minCount: deltaIdx + 1)
+					sectionInsertDeltas[deltaIdx] = curInsertDelta
+					handler(.section(.insert(dstIdx: idx), curInsert.name))
+					curInsertIdx += 1
+					
+				case (nil, nil):
+					assertionFailure("INTERNAL LOGIC ERROR")
 			}
 		}
-		var currentDeleteDelta = 0
-		var sectionDeleteDeltas = [Int]()
-		for (idx, delete) in currentSectionDeletes.enumerated() {
-			if delete != nil {
-				let idx = adjustSrcIdx(idx, withInsertDeltas: sectionInsertDeltas)
-				let deltaIdx = idx - currentDeleteDelta
-				assert(deltaIdx >= 0)
-				sectionDeleteDeltas.extendForDeltas(minCount: deltaIdx + 1)
-				currentDeleteDelta += 1
-				sectionDeleteDeltas[deltaIdx] = currentDeleteDelta
-			}
+		if #available(macOS 11.0, tvOS 14.0, iOS 14.0, watchOS 7.0, *) {
+			Logger.main.trace("Section insert deltas: \(sectionInsertDeltas)")
+			Logger.main.trace("Section delete deltas: \(sectionDeleteDeltas)")
 		}
 		
 		/* ********* Sort/reindex the row inserts, deletes and moves, and call them. ********* */
@@ -182,9 +205,9 @@ public final class CoreDataChangesAggregator<RowItemID> {
 		}
 		
 		/* ********* Call the section deletes. ********* */
-		for (idx, delete) in currentSectionDeletes.enumerated().reversed() {
-			guard let delete else {continue}
-			handler(.section(.delete(srcIdx: adjustSrcIdx(idx, withInsertDeltas: sectionInsertDeltas)), delete))
+		currentSectionDeletes.sort{ $0.idx > $1.idx }
+		for delete in currentSectionDeletes {
+			handler(.section(.delete(srcIdx: delete.idx), delete.name))
 		}
 		
 		/* ********* Finally, let’s remove all the registered changes as they are applied. ********* */
@@ -193,10 +216,8 @@ public final class CoreDataChangesAggregator<RowItemID> {
 		}
 	}
 	
-	/* For both arrays, the value is the name of the section being inserted/deleted.
-	 * If nil, there’s no change at this index. */
-	private var currentSectionInserts = [String?]()
-	private var currentSectionDeletes = [String?]()
+	private var currentSectionDeletes = [SectionInfo]()
+	private var currentSectionInserts = [SectionInfo]()
 	
 	private var currentMovingRowChanges = [RowChangeInfo<RowItemID>]()
 	private var currentStaticRowChanges = [RowChangeInfo<RowItemID>]()
@@ -211,6 +232,12 @@ public final class CoreDataChangesAggregator<RowItemID> {
 
 
 private extension Array {
+	
+	subscript(safe idx: Int) -> Element? {
+		assert(idx >= 0) /* Yes, the function is “safe,” but calling with an index lower than 0 is still illegal. */
+		guard idx < endIndex else {return nil}
+		return self[idx]
+	}
 	
 	subscript<T>(safe idx: Int) -> T? where Element == Optional<T> {
 		get {
@@ -240,16 +267,6 @@ private extension Array where Element == Int {
 		assert(minCount >= 0)
 		guard minCount > count else {return}
 		append(contentsOf: [Int](repeating: last ?? 0, count: minCount - count))
-	}
-	
-}
-
-
-private extension Array where Element == String? {
-	
-	mutating func addSectionChange(name: String, at idx: Int) {
-		assert(self[safe: idx] == nil)
-		self[safe: idx] = name
 	}
 	
 }
