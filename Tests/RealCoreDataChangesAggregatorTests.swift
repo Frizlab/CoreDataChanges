@@ -678,6 +678,87 @@ final class RealCoreDataChangesAggregatorTests : XCTestCase {
 		}
 	}
 	
+	func testLotsOfSeededRandomOperationsOnFewElementsButManySections() throws {
+		for seed in [6333307901044014058, 9028641369122766215, 12233175915943776524, 6518433589830160860, 14980529582378505534] as [UInt64] {
+			print("seed: \(seed)")
+			var randomGenerator = SeededGenerator(seed: seed)
+			
+			let output: Ref<[Section]> = Ref([])
+			let monitor = aggregatorMonitor(for: .init(), output: output)
+//			let monitor = printMonitor
+			defer {monitor.stopMonitor()}
+			
+			let frc = createFRC()
+			try monitor.startMonitor(controller: frc, context: context)
+			
+			let possibleSections = (1...123).map(String.init)
+			let possibleSectionlessTitles = (1...1).map(String.init)
+			
+			var allEntities = [String: Entity]()
+			
+			/* First let’s insert a bit of data. */
+			print("Step 1: Inserts.")
+			for _ in 0..<51 {
+				let e = try insertUniqueEntity(sections: possibleSections, sectionlessTitles: possibleSectionlessTitles, useCache: allEntities, using: &randomGenerator)
+				allEntities[e.title!] = e
+			}
+			context.processPendingChanges()
+			XCTAssertEqual(output.value, sections(from: frc))
+			
+			/* Now let’s move some elements around. */
+			print("Step 2: Moves.")
+			for _ in 0..<32 {
+				let entityTitle = allEntities.keys.sorted().randomElement(using: &randomGenerator)!
+				let entity = allEntities[entityTitle]!
+				(entity.section, entity.title) = try uniqueEntityDescription(sections: possibleSections, sectionlessTitles: possibleSectionlessTitles, useCache: allEntities, using: &randomGenerator)
+				allEntities[entity.title!] = entity
+				allEntities[entityTitle] = nil
+			}
+			context.processPendingChanges()
+			XCTAssertEqual(output.value, sections(from: frc))
+			
+			/* Let’s move, insert and delete elements randomly. */
+			print("Step 3: Moves, inserts and deletes at random.")
+			for _ in 0..<12 {
+				for _ in 0..<Int.random(in: 3..<15, using: &randomGenerator) {
+					switch UInt8.random(in: 0..<3, using: &randomGenerator) {
+						case 0:
+							/* Insert element. */
+							let e = try insertUniqueEntity(sections: possibleSections, sectionlessTitles: possibleSectionlessTitles, useCache: allEntities, using: &randomGenerator)
+							allEntities[e.title!] = e
+							
+						case 1:
+							/* Delete element. */
+							let title = allEntities.keys.sorted().randomElement(using: &randomGenerator)!
+							context.delete(allEntities[title]!)
+							allEntities[title] = nil
+							
+						case 2:
+							/* Move element. */
+							let entityTitle = allEntities.keys.sorted().randomElement(using: &randomGenerator)!
+							let entity = allEntities[entityTitle]!
+							(entity.section, entity.title) = try uniqueEntityDescription(sections: possibleSections, sectionlessTitles: possibleSectionlessTitles, useCache: allEntities, using: &randomGenerator)
+							allEntities[entity.title!] = entity
+							allEntities[entityTitle] = nil
+							
+						default:
+							fatalError()
+					}
+				}
+				/* Got other crash when uncommenting that one. */
+//				context.processPendingChanges()
+//				XCTAssertEqual(output.value, sections(from: frc))
+			}
+			context.processPendingChanges()
+			prettyPrintSections("ref: ", sections(from: frc))
+			prettyPrintSections("cmp: ", output.value)
+			XCTAssertEqual(output.value, sections(from: frc))
+			
+			/* A bit dirty, but it’ll do. */
+			tearDown(); try setUpWithError()
+		}
+	}
+	
 	func uniqueEntityDescription<T : RandomNumberGenerator>(sections: [String], sectionlessTitles: [String], useCache cache: [String: Entity]? = nil, using generator: inout T) throws -> (section: String, title: String) {
 //		print("searching")
 		while true {
