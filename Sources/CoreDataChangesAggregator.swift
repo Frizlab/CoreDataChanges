@@ -83,8 +83,8 @@ public final class CoreDataChangesAggregator<RowItemID> {
 			switch (curDelete, curInsert) {
 				case let (curDelete?, curInsert?) where
 					(
-						adjustSrcIdx(curDelete.idx, withInsertDeltas: sectionInsertDeltas) - curDeleteDelta <=
-						adjustDstIdx(curInsert.idx, withDeleteDeltas: sectionDeleteDeltas) - curInsertDelta
+						adjustSrcIdx(curDelete.idx, withInsertDeltas: sectionInsertDeltas) <=
+						adjustDstIdx(curInsert.idx, withDeleteDeltas: sectionDeleteDeltas)
 					):
 //					if #available(macOS 11.0, tvOS 14.0, iOS 14.0, watchOS 7.0, *) {
 //						Logger.main.trace("In delete and insert \(curDelete) - \(curInsert)")
