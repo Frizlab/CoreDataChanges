@@ -86,9 +86,9 @@ public final class CoreDataChangesAggregator<RowItemID> {
 						adjustSrcIdx(curDelete.idx, withInsertDeltas: sectionInsertDeltas) - curDeleteDelta <=
 						adjustDstIdx(curInsert.idx, withDeleteDeltas: sectionDeleteDeltas) - curInsertDelta
 					):
-					if #available(macOS 11.0, tvOS 14.0, iOS 14.0, watchOS 7.0, *) {
-						Logger.main.trace("In delete and insert \(curDelete) - \(curInsert)")
-					}
+//					if #available(macOS 11.0, tvOS 14.0, iOS 14.0, watchOS 7.0, *) {
+//						Logger.main.trace("In delete and insert \(curDelete) - \(curInsert)")
+//					}
 					fallthrough
 				case let (curDelete?, nil):
 					let idx = adjustSrcIdx(curDelete.idx, withInsertDeltas: sectionInsertDeltas)
@@ -114,10 +114,10 @@ public final class CoreDataChangesAggregator<RowItemID> {
 					assertionFailure("INTERNAL LOGIC ERROR")
 			}
 		}
-		if #available(macOS 11.0, tvOS 14.0, iOS 14.0, watchOS 7.0, *) {
-			Logger.main.trace("Section insert deltas: \(sectionInsertDeltas)")
-			Logger.main.trace("Section delete deltas: \(sectionDeleteDeltas)")
-		}
+//		if #available(macOS 11.0, tvOS 14.0, iOS 14.0, watchOS 7.0, *) {
+//			Logger.main.trace("Section insert deltas: \(sectionInsertDeltas)")
+//			Logger.main.trace("Section delete deltas: \(sectionDeleteDeltas)")
+//		}
 		
 		/* ********* Sort/reindex the row inserts, deletes and moves, and call them. ********* */
 		currentMovingRowChanges.forEach{ $0.adjustSection(sectionInsertDeltas: sectionInsertDeltas, sectionDeleteDeltas: sectionDeleteDeltas) }
